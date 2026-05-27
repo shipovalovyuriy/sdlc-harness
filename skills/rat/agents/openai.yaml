@@ -1,0 +1,4 @@
+interface:
+  display_name: "RAT"
+  short_description: "Find and test the riskiest assumptions"
+  default_prompt: "Use $rat to identify the riskiest assumptions and design the fastest credible test."

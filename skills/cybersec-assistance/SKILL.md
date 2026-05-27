@@ -12,7 +12,7 @@ description: >
 
 ## Overview
 
-Run a pragmatic security review on codebases, configs, and deployments, then deliver actionable findings and a clear remediation plan.
+Run a pragmatic security review on codebases, configs, and deployments, then deliver actionable findings, validated attack paths, and a clear remediation plan.
 
 ## Safety & Guardrails (Always)
 
@@ -23,36 +23,58 @@ Run a pragmatic security review on codebases, configs, and deployments, then del
 
 ## Workflow Decision Tree
 
-0. **Threat model / abuse-path analysis (repo-grounded)**
+0. **Full security scan / security code review**
+   - If the user asks to scan a PR, commit, branch, patch, working tree diff, or whole repository.
+   - Use the phased Codex Security method in `references/codex-security-method.md`.
+   - Keep phases separate: threat model -> finding discovery -> validation -> attack-path/severity analysis -> final report.
+   - For diff scans, stay anchored to changed code plus required supporting files. For repository-wide scans, use an explicit runtime inventory and coverage ledger.
+
+1. **Threat model / abuse-path analysis (repo-grounded)**
    - If the user asks to threat model a codebase, enumerate threats/abuse paths, or analyze trust boundaries.
    - Follow "Threat Model Workflow" below and use:
      - Output contract + prompt template: `references/threat-model-prompt-template.md`
      - Controls/assets checklist: `references/threat-model-security-controls-and-assets.md`
    - Write the final Markdown report to `<repo-or-dir-name>-threat-model.md` (or a user-provided path).
 
-1. **Security best practices / secure-by-default guidance**
+2. **Security best practices / secure-by-default guidance**
    - If the user asks for "security best practices", secure-by-default coding help, or a best-practices review.
    - Identify languages/frameworks in scope, then load matching docs from:
      - `~/.codex/skills/security-best-practices/references/`
      - File pattern: `<language>-<framework>-<stack>-security.md` and `*-general-*-security.md`
    - If asked for a report, write to `security_best_practices_report.md` (or a user-provided path).
 
-2. **Source code / repo audit**
+3. **Source code / repo audit**
    - Run local, offline scans first (secrets + insecure patterns): `scripts/repo_audit.py`
    - Then run best-available SAST/dependency tools (only if installed): Semgrep, OSV, govulncheck, etc.
 
-3. **Container image / Dockerfile / IaC**
+4. **Container image / Dockerfile / IaC**
    - Review Dockerfile/K8s/Terraform configs with the checklist: `references/checklists.md`
    - If Trivy is installed, run `scripts/trivy_scan.py` for filesystem/config and/or container images.
 
-4. **Web app / API pentest (authorized only)**
+5. **Web app / API pentest (authorized only)**
    - Start with passive recon + auth/role checks + input validation probes.
    - Avoid brute force and destructive payloads unless explicitly in-scope.
    - Use `references/web-pentest.md` for a safe checklist and reporting structure.
 
-5. **Reporting**
+6. **Fix a validated or plausible security finding**
+   - If the user asks to fix a concrete finding, use the minimal-fix workflow in `references/codex-security-method.md`.
+   - Reproduce or encode the issue before fixing when feasible, enforce the invariant at the narrowest existing boundary, add focused regression coverage, and verify the original path no longer works.
+
+7. **Reporting**
    - Use `scripts/make_report.py` + `assets/report-template.md` to produce a consistent report.
    - Use `references/reporting.md` for severity and write-up standards.
+   - For full scans, follow the final report contract in `references/codex-security-method.md`: only report findings that survive validation and attack-path policy checks.
+
+## Phased Security Scan Workflow
+
+Use `references/codex-security-method.md` for full PR/commit/branch/patch/repository scans. The useful additions from Codex Security are:
+
+- repository-scoped threat model first, independent of the specific diff unless the user asks for narrower scope
+- separate discovery, validation, attack-path analysis, and final report phases
+- explicit scan artifacts under `/tmp/codex-security-scans/<repo>/<scan_id>/`
+- instance-preserving discovery and validation for repeated routes, templates, parser operations, query builders, auth/object endpoints, and shared-helper callers
+- reportability and severity based on repository evidence, counterevidence, realistic reachability, and impact, not scanner labels
+- final reports that keep exact affected `file:line` evidence, including root controls and wrapper/sink pairs
 
 ## Threat Model Workflow (Repo-grounded)
 
@@ -129,6 +151,7 @@ Deliver an actionable threat model that is specific to the repository or a reque
 - `scripts/trivy_scan.py`: Trivy wrapper (fs/image) → summarized JSON findings + raw Trivy JSON.
 - `scripts/make_report.py`: Convert findings JSON → Markdown report.
 - `references/checklists.md`: Review checklists (repo, Docker, IaC, authz, logging).
+- `references/codex-security-method.md`: Phased scan, validation, attack-path, severity, report, and fix workflow distilled from Codex Security.
 - `references/web-pentest.md`: Safe, authorized web/API testing checklist.
 - `references/reporting.md`: Severity, evidence, remediation, and report conventions.
 - `references/trends.md`: “What to check this week” sources and triage tips.

@@ -36,6 +36,9 @@ Do not mention the category to the user.
 Ask all questions in ONE message in the user's language.
 Present each question with lettered options + "d) Other: ..." so the user
 can pick or type their own answer.
+Ask for target model/platform when it changes the prompt contract, especially
+for OpenAI API / Responses API, ChatGPT, Codex, Claude, Gemini, image models,
+or local models.
 
 Format:
 ```
@@ -67,13 +70,15 @@ Ask only relevant questions. Skip what the user already answered.
 3. What does it receive as input?
 4. What does it produce as output? (text / JSON / code / document)
 5. Any constraints? (language / topic / format / what it must NOT do)
+6. Target runtime? (OpenAI API / ChatGPT / Codex / other)
 
 **coding / architecture:**
 1. Task type? (code generation / code review / debugging / architecture / audit)
 2. Tech stack / platform?
 3. What is the input? (description / existing code / schema)
 4. What is the output? (code / plan / report / JSON)
-5. Level of autonomy? (single response / agent mode with steps)
+5. Level of autonomy? (single response / agent mode with steps / long-running agent)
+6. Target runtime? (Codex / Cursor-like agent / OpenAI API / other)
 
 **research / writing / other:**
 1. Goal of the prompt?
@@ -106,11 +111,38 @@ Just the prompt, ready to copy-paste.
 
 Use these techniques inside the generated prompt:
 - role prompting
-- step-by-step reasoning instructions
+- private planning instructions, without asking the model to expose hidden reasoning
 - explicit constraints
-- output schema
+- clear output contract
+- explicit completion criteria
+- verbosity / length controls
+- grounding, citation, or evidence rules when factual accuracy matters
+- tool-use expectations when tools are available
 - self-verification block (QUALITY CHECK)
 - agent optimization when relevant (task decomposition, decision rules, failure handling)
+
+### OpenAI prompt guidance defaults
+
+When the generated prompt targets OpenAI reasoning models, ChatGPT, Codex, or
+the OpenAI API, apply these defaults unless the user asks otherwise:
+
+- Specify the output contract, tool-use expectations, and what "done" means.
+- Treat reasoning effort as an API/runtime tuning knob; first improve the prompt
+  with a completeness contract, verification loop, and tool persistence rules.
+- Control final-answer length separately from reasoning quality with word budgets,
+  section counts, table widths, JSON-only output, or other concrete limits.
+- For JSON or schema-bound outputs, write a precise output contract; when the
+  target is the OpenAI API, prefer enforcing the schema with Structured Outputs
+  in the integration rather than relying only on prose instructions.
+- Put stable, reusable policy/context before dynamic user-specific context in
+  prompts that may benefit from prompt caching.
+- Separate persistent personality from per-response writing controls: persona,
+  channel, register, formatting, and length.
+- Use Markdown only when the consuming surface supports it or the user asks for
+  it; otherwise ask for plain text or a strict machine-readable format.
+- For tool-using agents, put durable tool invocation rules close to the tool
+  descriptions when the target platform supports tool descriptions; keep the
+  system prompt focused on cross-tool policy, autonomy, and stopping criteria.
 
 ### Output structure by category
 
@@ -139,20 +171,24 @@ CONSTRAINTS
 - ...
 
 REASONING STRATEGY
-- Break the task into steps
-- Verify assumptions before proceeding
-- Consider edge cases
-- Validate results against constraints
+- Plan privately before answering
+- Verify assumptions that affect correctness
+- Consider edge cases and conflicting requirements
+- Validate the result against the output contract
 
 OUTPUT FORMAT
 [Exact structure: markdown / JSON / table / code blocks]
+
+COMPLETION CRITERIA
+- [Concrete condition that means the task is done]
+- [Required evidence, validation, or acceptance condition]
 
 QUALITY CHECK
 Before finalizing, verify internally:
 - Task is fully solved
 - Constraints are respected
 - Output format is correct
-- Reasoning is coherent
+- Completion criteria are satisfied
 ```
 
 **coding / architecture:**
@@ -162,7 +198,9 @@ AGENT OPTIMIZATION
 - Decompose into subtasks
 - Decision rule for each branch
 - Verification loop after each step
+- Tool-use policy: [when to inspect files, run commands, search docs, or ask]
 - Failure handling: [what to do if step N fails]
+- Stop condition: [when to finish versus continue autonomously]
 ```
 
 **other:**
@@ -178,5 +216,10 @@ Always include CONSTRAINTS and QUALITY CHECK sections.
 - All constraints as positive instructions ("do X", not "don't do Y")
 - No filler phrases in generated prompts ("as an AI...", "certainly!")
 - Output format precise enough to be deterministic
+- Explicitly control verbosity and length when the output could drift long
+- Include completion criteria for agent, coding, research, and API prompts
+- Add evidence/citation rules for factual, research, legal, financial, or technical synthesis
+- Add tool-use and persistence rules for agentic prompts that can call tools
 - Image prompts: comma-separated, most important details first
 - Agent prompts: always include uncertainty handling and quality check
+- Coding prompts: avoid vague "be thorough" language; state the concrete context-gathering, implementation, and verification steps instead

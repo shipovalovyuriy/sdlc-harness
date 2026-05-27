@@ -1,0 +1,4 @@
+interface:
+  display_name: "Constraint Flow Thinking"
+  short_description: "Find constraints, queues, and leverage points"
+  default_prompt: "Use $constraint-flow-thinking to diagnose this system constraint and recommend the smallest throughput-improving intervention."

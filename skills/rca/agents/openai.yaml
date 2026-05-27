@@ -1,0 +1,4 @@
+interface:
+  display_name: "RCA"
+  short_description: "Root-cause analysis for incidents and product problems"
+  default_prompt: "Use $rca to analyze this problem, separate facts from hypotheses, and produce an RCA report with corrective actions."
