@@ -61,8 +61,8 @@ Manual install is also simple:
 
 ```bash
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-mkdir -p "$CODEX_HOME/skills/public" "$CODEX_HOME/agents"
-cp -R skills/public/. "$CODEX_HOME/skills/public/"
+mkdir -p "$CODEX_HOME/skills" "$CODEX_HOME/agents"
+cp -R skills/. "$CODEX_HOME/skills/"
 cp agents/*.toml "$CODEX_HOME/agents/"
 ```
 

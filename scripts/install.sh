@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 
-mkdir -p "$CODEX_HOME/skills/public" "$CODEX_HOME/agents"
+mkdir -p "$CODEX_HOME/skills" "$CODEX_HOME/agents"
 
-cp -R "$ROOT_DIR/skills/public/." "$CODEX_HOME/skills/public/"
+cp -R "$ROOT_DIR/skills/." "$CODEX_HOME/skills/"
 cp "$ROOT_DIR"/agents/*.toml "$CODEX_HOME/agents/"
 
 VALIDATOR="$CODEX_HOME/skills/.system/skill-creator/scripts/quick_validate.py"
