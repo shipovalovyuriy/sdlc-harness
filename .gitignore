@@ -1,19 +1,28 @@
-# Local Codex config and secret-bearing files
+.DS_Store
+
+# Secrets and private local config
 config.toml
-*.local.toml
-*.secrets.toml
 .env
 .env.*
+auth.json
+credentials.json
+token.json
+secrets.*
+*.secrets.toml
 *.pem
 *.key
 *.p12
 *.pfx
+*.p8
 *.crt
 *.csr
 *.der
 *.kdbx
+config.local.toml
+*.local.toml
 
-# Local backups and OS noise
+# Local Codex/runtime noise
+.codex/log/
+logs/
+tmp/
 *.bak
-.DS_Store
-**/.DS_Store

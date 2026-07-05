@@ -1,0 +1,7 @@
+interface:
+  display_name: "AIRD Discovery Loop"
+  short_description: "Create PRD/TRD/DoD from independent discovery"
+  default_prompt: "Use $aird-discovery-loop to turn this feature idea into an AIRD package."
+
+policy:
+  allow_implicit_invocation: false

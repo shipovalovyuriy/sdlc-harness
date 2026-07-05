@@ -1,0 +1,24 @@
+# Safe Codex configuration snippet.
+# Merge into ~/.codex/config.toml manually.
+#
+# Do not put API keys, auth tokens, bearer tokens, private MCP credentials,
+# or project-specific secrets in this repository.
+
+[features]
+multi_agent = true
+skill_mcp_dependency_install = true
+
+# Optional. Enable only if you want Codex to use the built-in commit flow
+# when you explicitly ask it to commit.
+codex_git_commit = false
+
+[agents]
+# Tune for your machine and model budget. AIRD loops may use multiple
+# independent agents, but the main session should not run unlimited workstreams.
+max_threads = 6
+max_depth = 1
+job_max_runtime_seconds = 1800
+
+# Example local policy. Keep approval behavior aligned with your environment.
+# approval_policy = "on-request"
+# approvals_reviewer = "auto_review"

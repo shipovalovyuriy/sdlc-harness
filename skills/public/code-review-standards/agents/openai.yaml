@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Review Standards"
+  short_description: "Standards-backed code review and worker guidance"
+  default_prompt: "Use $code-review-standards to review or implement code against language, testing, security, and API standards."

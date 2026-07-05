@@ -1,0 +1,7 @@
+interface:
+  display_name: "AIRD Delivery Loop"
+  short_description: "Execute and verify AIRD workorders"
+  default_prompt: "Use $aird-delivery-loop to implement and verify this AIRD package."
+
+policy:
+  allow_implicit_invocation: false

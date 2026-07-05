@@ -1,98 +1,175 @@
 # Codex Setup
 
-This repository contains a local Codex setup bundle: agent definitions, reusable skills, and workspace-level instructions for how Codex should operate in this environment.
+Reusable Codex setup bundle: workspace instructions, agent definitions, skills, and safe configuration snippets for agentic software delivery.
 
-It is intended to be read by both humans and Codex. Keep the files clear, explicit, and easy to audit.
+This repository is intended to be read by both humans and Codex. Keep the files clear, explicit, and easy to audit.
 
-## Contents
+It packages the workflow we use for two modes:
 
-- `AGENTS.md` - workspace instructions that define routing rules, planning expectations, and when agent delegation is allowed.
-- `agents/` - TOML definitions for specialized Codex agents.
-- `skills/` - reusable skill packages. Each skill is anchored by a `SKILL.md` file and may include scripts, references, assets, and agent metadata.
-- `version.json` - local version metadata for this setup.
+- **AIRD Discovery Loop**: interactive product, UX, risk, UI, and technical discovery that produces an implementation-ready AIRD package.
+- **AIRD Delivery Loop**: execution and verification loop that turns an AIRD package into working code with quality gates.
+- **Code Review Standards**: standards-backed engineering guidance for reviewers and implementation workers.
+- **Improve My Code**: iterative review, refactor, verification, and optional commit loop for an existing codebase.
+
+The setup is intentionally portable. It does not include private Codex auth files, API keys, provider credentials, local logs, or project-specific secrets.
+
+## Repository Layout
+
+```text
+.
+├── AGENTS.md
+├── CLAUDE.md
+├── agents/
+│   ├── architect.toml
+│   ├── backend-worker.toml
+│   ├── frontend-worker.toml
+│   ├── reviewer.toml
+│   ├── qa.toml
+│   └── ...
+├── config/
+│   └── config.toml.example
+├── docs/
+│   ├── CONFIG.md
+│   ├── INCLUDED.md
+│   └── SECURITY.md
+├── scripts/
+│   └── install.sh
+└── skills/
+    ├── public/
+    │   ├── aird-discovery-loop/
+    │   ├── aird-delivery-loop/
+    │   ├── code-review-standards/
+    │   └── improve-my-code/
+    └── ...
+```
+
+## Install
+
+From the repository root:
+
+```bash
+./scripts/install.sh
+```
+
+By default the script installs into `~/.codex`. You can override the target:
+
+```bash
+CODEX_HOME=/path/to/codex-home ./scripts/install.sh
+```
+
+Manual install is also simple:
+
+```bash
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+mkdir -p "$CODEX_HOME/skills/public" "$CODEX_HOME/agents"
+cp -R skills/public/. "$CODEX_HOME/skills/public/"
+cp agents/*.toml "$CODEX_HOME/agents/"
+```
+
+## Codex Config
+
+Merge the safe snippet from [config/config.toml.example](config/config.toml.example) into your own `~/.codex/config.toml`.
+
+Do not commit your real `~/.codex/config.toml` if it contains local server URLs, tokens, provider settings, project paths, or other private data.
+
+Recommended minimum:
+
+```toml
+[features]
+multi_agent = true
+skill_mcp_dependency_install = true
+
+[agents]
+max_threads = 6
+max_depth = 1
+```
+
+See [docs/CONFIG.md](docs/CONFIG.md) for details.
+
+## Usage
+
+Discovery for a new feature:
+
+```text
+$aird-discovery-loop
+```
+
+Delivery from an AIRD package:
+
+```text
+$aird-delivery-loop
+```
+
+Code review or worker implementation guidance:
+
+```text
+$code-review-standards
+```
+
+Iterative codebase cleanup and refactor:
+
+```text
+$improve-my-code
+```
 
 ## Agent Definitions
 
 Agent configs live in `agents/*.toml`.
 
-Current agent roles include:
+Core roles include:
 
 - `architect`
 - `architect-deep`
 - `backend-worker`
-- `cybersec`
-- `debugger`
-- `docs`
-- `explorer`
 - `frontend-worker`
-- `qa`
+- `worker`
 - `reviewer`
+- `qa`
+- `explorer`
+- `debugger`
 - `supervisor`
 - `triage`
+- `docs`
+- `cybersec`
 - `uiux-designer`
-- `worker`
+- `product-analyst`
+- `risk-analyst`
 
-Each agent file should define the model, reasoning effort, sandbox behavior, and role-specific developer instructions. Keep agent responsibilities narrow so routing remains predictable.
+Each agent file should define the model, reasoning effort, sandbox behavior, and role-specific developer instructions. Keep responsibilities narrow so routing remains predictable.
 
-## Skills
+## How The Loops Fit Together
 
-Skill packages live in `skills/<skill-name>/`.
+`$aird-discovery-loop` is the planning loop. It runs an interactive discussion with the user, launches independent specialist agents where useful, identifies risks early, clarifies UI/UX when needed, and writes an AIRD package with:
 
-Current skills include support for:
+- PRD, TRD, UI spec, and optional UI prototype brief
+- risk register with mitigation decisions
+- API contracts and data model decisions
+- implementation plan and workorders
+- quality gates and Definition of Done
 
-- Figma workflows and design-system generation
-- image generation
-- Playwright/browser validation
-- screenshots
-- spreadsheets
-- PDFs
-- Vercel deployment
-- security assistance, best practices, threat modeling, and ownership maps
-- Atlas tooling
-- public frontend/backend guidance skills
+`$aird-delivery-loop` is the implementation loop. It reads the AIRD package, spawns independent workers for discrete workorders, integrates their output, runs review and QA gates, and loops fixes back to workers until the feature satisfies the quality gates.
 
-A skill should normally include:
+`$improve-my-code` is for improving an existing codebase without a new feature spec. It scans, builds a prioritized backlog, applies focused refactors, verifies behavior, runs review, and optionally commits when the user asks for commit mode.
 
-- `SKILL.md` - the entrypoint and usage instructions.
-- `agents/openai.yaml` - optional agent metadata.
-- `scripts/` - optional executable helpers.
-- `references/` - optional deeper documentation.
-- `assets/` - optional icons or static assets.
+## Validation
 
-## Operating Rules
+If you have Codex's system `skill-creator` skill installed, validate a skill with:
 
-The main behavior rules are in `AGENTS.md`. The most important ones are:
-
-- Do not delegate to agents unless the user explicitly asks for delegation, sub-agents, or parallel agent work.
-- Use lightweight direct handling for small or tightly scoped tasks.
-- Use `architect` for normal non-trivial design work that needs an implementation brief.
-- Use `architect-deep` only for complex features, significant refactors, migrations, contract changes, or unresolved high-impact tradeoffs.
-- Use the OpenAI developer documentation MCP server when working with OpenAI APIs, Codex, ChatGPT Apps SDK, or related developer tooling.
-
-## Maintenance Guidelines
-
-When changing this repository:
-
-- Keep instructions concrete and testable.
-- Prefer small, focused changes over broad rewrites.
-- Keep each skill self-contained and document any required environment variables or external tools.
-- Keep scripts reusable; avoid one-off logic hidden in instructions.
-- Do not commit local secrets, API keys, private config, or machine-specific files.
-- Validate TOML syntax after editing agent definitions.
-- Check that every new skill has a clear `name`, `description`, and workflow in `SKILL.md`.
-
-## Git Hygiene
-
-The `.gitignore` excludes local Codex config, secret-bearing files, environment files, private keys, certificates, local backups, and OS noise.
-
-Before committing, check:
-
-```sh
-git status --short
+```bash
+python3 "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" "$HOME/.codex/skills/public/aird-discovery-loop"
 ```
 
-For agent config changes, also inspect the edited TOML files carefully before committing.
+Repeat for each skill after editing.
 
-## Version Metadata
+## Safety
 
-`version.json` stores local setup version information, including the latest known version and when it was last checked. Treat it as metadata for this bundle, not as application runtime state.
+This repository is meant to be shareable. Keep secrets out:
+
+- no `auth.json`
+- no API keys
+- no `.env` files
+- no private MCP credentials
+- no copied local logs
+- no full private `config.toml`
+
+See [docs/SECURITY.md](docs/SECURITY.md).

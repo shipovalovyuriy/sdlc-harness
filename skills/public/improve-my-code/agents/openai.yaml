@@ -1,0 +1,7 @@
+interface:
+  display_name: "Improve My Code"
+  short_description: "Looped code review, refactor, verification, and optional commit"
+  default_prompt: "Use $improve-my-code to scan this codebase, refactor selected issues, verify the result, and optionally commit."
+
+policy:
+  allow_implicit_invocation: false

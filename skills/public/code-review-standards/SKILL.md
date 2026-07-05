@@ -1,0 +1,70 @@
+---
+name: code-review-standards
+description: Standards-backed code review and implementation guidance for reviewer, backend-worker, frontend-worker, and worker agents. Use when reviewing code, preparing to implement code from a workorder, checking diffs against language/framework best practices, or producing review findings with evidence. Covers universal review rules, project structure, function design, reuse, optimization, community Awesome List discovery, plus Go, TypeScript/React, Python, Java, Kotlin, Rust, C#, C++, backend, frontend, API, testing, and security references.
+---
+
+# Code Review Standards
+
+Use this skill to ground implementation and review in project conventions plus established language, framework, structure, reuse, performance, testing, API, and security standards.
+
+## Priority Order
+
+Apply standards in this order:
+
+1. Existing project conventions, nearby code, architecture docs, and AIRD decisions.
+2. Project tooling configs such as formatter, linter, typechecker, test runner, CI, or static analyzer.
+3. This skill's standards references.
+4. Reviewer judgement for risks not covered above.
+
+Do not fight project tooling over style. Prefer findings about correctness, contracts, maintainability, security, tests, observability, performance, accessibility, and operational risk.
+
+## Routing
+
+Always read `references/universal.md` and `references/structure-reuse-performance.md` first.
+
+Then load only the relevant references:
+
+- Frontend TypeScript/React: `references/frontend.md`, `references/typescript-react.md`, `references/testing.md`.
+- Backend services/APIs: `references/backend.md`, `references/api-design.md`, `references/testing.md`.
+- Security-sensitive work: `references/security.md`.
+- Tooling/library/static-analysis discovery or missing project gates: `references/community-awesome.md`.
+- Language-specific work:
+  - Go: `references/go.md`
+  - Python: `references/python.md`
+  - Java: `references/java.md`
+  - Kotlin: `references/kotlin.md`
+  - Rust: `references/rust.md`
+  - C#: `references/csharp.md`
+  - C++: `references/cpp.md`
+- If the stack is unclear, inspect manifests/configs first, then load the smallest matching set.
+
+Use `community-awesome.md` only as a discovery index for tools, libraries, and ecosystem references. It is not normative: verify any discovered tool against its official docs/repo activity/license before recommending it, and never make a blocking finding solely because an Awesome List mentions something.
+
+## Worker Mode
+
+When coding as `backend-worker`, `frontend-worker`, or `worker`:
+
+1. Read the workorder and required AIRD docs.
+2. Read `references/universal.md`, `references/structure-reuse-performance.md`, plus the stack references from Routing.
+3. Identify project-local conventions and tooling configs before editing.
+4. Decide where the code belongs, what existing functions/types/hooks/services to reuse, and whether optimization is required by the workorder or current code path.
+5. If adding a tool, dependency, linter, formatter, SAST check, or major library, consult `references/community-awesome.md` as discovery and then verify the chosen tool from primary sources.
+6. Implement the smallest scoped change.
+7. Run the workorder's required checks.
+8. Report changed files, commands run, standards-sensitive decisions, reuse/structure choices, and blockers.
+
+If the workorder conflicts with the standards or project conventions, stop and report the conflict instead of silently choosing a new design.
+
+## Reviewer Mode
+
+When reviewing:
+
+1. Read the diff, workorder, DoD, quality gates, and relevant standards.
+2. Lead with findings ordered by severity.
+3. Cite the file/line, the violated local convention or standards principle, and the behavioral risk.
+4. Avoid style-only comments already enforced by formatter/linter unless the tooling is missing or misconfigured.
+5. Check structure, function boundaries, reuse, duplication, and optimization before style comments.
+6. Use `community-awesome.md` only to suggest missing tooling or alternatives; do not treat community curation as a pass/fail rule.
+7. Mark a finding blocking only when it can affect correctness, security, data integrity, compatibility, reliability, UX/accessibility, test validity, maintainability, or performance of the delivered change.
+
+Use `assets/review-report.md` when a structured review artifact is needed.
