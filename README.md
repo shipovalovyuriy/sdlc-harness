@@ -160,16 +160,3 @@ python3 "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" "$
 ```
 
 Repeat for each skill after editing.
-
-## Safety
-
-This repository is meant to be shareable. Keep secrets out:
-
-- no `auth.json`
-- no API keys
-- no `.env` files
-- no private MCP credentials
-- no copied local logs
-- no full private `config.toml`
-
-See [docs/SECURITY.md](docs/SECURITY.md).
