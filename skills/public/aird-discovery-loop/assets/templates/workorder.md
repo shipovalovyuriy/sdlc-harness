@@ -33,6 +33,14 @@
 - Extra context allowed:
 - Extra context forbidden:
 
+## Task Breakdown
+
+Sizing rule: 1–3 atomic tasks, each one coherent edit unit (~one commit); the whole workorder must fit a fresh worker context in one sitting. If it does not fit, split into sequenced workorders instead of growing this list.
+
+1. 
+2. 
+3. 
+
 ## Scope
 
 - Objective:

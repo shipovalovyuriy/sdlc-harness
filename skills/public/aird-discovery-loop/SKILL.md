@@ -5,9 +5,19 @@ description: "Explicit ARiD/AIRD discovery loop for turning a non-trivial featur
 
 # AIRD Discovery Loop
 
-## Operating Model
+## Operating Model: Context Is Disposable, Disk Is Memory
 
 Run this as the main-session orchestration skill. The main session owns the loop, spawns independent subagents, integrates results, and decides when the AIRD package is ready. Do not create a separate permanent orchestrator unless the user asks for one.
+
+The same token model as `$aird-delivery-loop` applies: **no long-lived all-remembering orchestrator.** Everything durable lives in the package files; the orchestrator context is a disposable working buffer, and a fresh session must be able to continue from `STATE.md` + `00-discussion-log.md` alone.
+
+- **Phase boundaries are checkpoints.** After each discovery phase (intake, discussion, recon, product/UX, risks, TRD, plan), write the durable outcome into the package and `STATE.md`. When context usage crosses ~50% of the window, the very next action is `STATE.md` + `.continue-here.md` and continuing in a fresh session. Hitting auto-compaction means the checkpoint was late — never rely on compaction to carry state.
+- **The orchestrator holds decisions, not bulk.** Subagents (`explorer`, `product-analyst`, `architect`, `risk-analyst`, `uiux-designer`) read sources and write package files directly; they return verdicts, key facts, and paths — not transcripts or file dumps. The orchestrator's working memory is the running decision table plus `STATE.md`, not the docs' contents.
+- **Runtime probing is explorer work.** ssh, kubectl, curl, deploy checks, and log reading during reconnaissance run inside a scoped `explorer` (or a dedicated recon subagent) whose findings land in `codemap.md`/AIRD docs as evidence pointers. The main session never accumulates raw remote output.
+
+Context budget hard rules (same as delivery, blocking, not preferences): batch checks into one compound command instead of serial `git status`/health-check calls; long-running commands write full output to a log file and return exit code + counts + `tail -30` + log path — never stream 30-second chunks or poll a running process; cap every listing that can explode (`| head -50` on `find`, `ls -R`, `git ls-files --others`); screenshots and images never enter the orchestrator context — they are files whose paths go into the package, and only a disposable QA/design subagent opens pixels; subagent results over ~40 lines belong in a file with the path returned; skill references and package docs are read once — if you are re-reading one, a summary line is missing from `STATE.md` or the discussion log.
+
+The interactive discussion gate is the exception that proves the rule: interview turns are cheap only when the context under them is lean. Run the discussion gate early, on top of intake plus a recon *summary* — not on top of a session already bloated by hands-on probing.
 
 Explicit invocation of this skill counts as an explicit request for delegation and parallel agent work: its spawning instructions have priority over the general no-delegation rule in `AGENTS.md`. Do not ask the user for permission before each spawn.
 
@@ -64,6 +74,8 @@ Never mark a document complete when it only restates headings, contains generic 
 ## Discovery Phases
 
 ### 1. Intake
+
+In a git repository, first create or switch to the `aird/<feature-slug>` branch — the branch name is what activates the AIRD guard hooks (edit gate, tool budget, context checkpoint); discovery run on another branch loses that protection. During discovery all writes stay inside the package dir, so the edit gate does not get in the way.
 
 Create or update `00-intake.md` and initialize `STATE.md` from `assets/templates/state.md` with:
 
@@ -144,6 +156,8 @@ For repository, codebase, file, or current-behavior tasks, run `explorer` first.
 
 Each explorer output must answer: where, what connects, what matters next, and exact file paths.
 
+Reconnaissance that touches a running system — ssh into hosts, `kubectl` inspection, hitting endpoints, reading remote logs, deploy checks — happens **inside the explorer subagent**, never in the main session. The explorer records observations (commands run, exit codes, key lines, log file paths) into `codemap.md` or the relevant AIRD doc and returns a summary with pointers. Raw remote output in the orchestrator context is the single biggest discovery token sink observed in practice.
+
 For any non-trivial change, reconnaissance produces a `codemap.md` (via `explorer`) that becomes the map delivery and verification work from — a hierarchical tree with a one-line purpose per node plus a `Cross-cutting` section for shared infrastructure (DB, auth, test runner, config). Agents work from the codemap and load raw files only when a task needs a direct edit, which keeps context lean. For broad or multi-layer codebases, additionally split the deeper `codebase/` map files across scoped explorers. Use `references/codebase-map.md` for both shapes. Skip only for tiny changes confined to already-known files.
 
 Reconnaissance is not complete until the AIRD docs cite the evidence that matters. After explorers return, propagate relevant paths, existing patterns, constraints, fragile areas, and verification commands into `01-prd.md`, `03-risk-register.md`, `04-trd.md`, `07-implementation-plan.md`, `08-quality-gates.md`, and each affected workorder. Do not leave evidence trapped only in `codemap.md`.
@@ -180,7 +194,7 @@ Prototype rules:
 - prefer an isolated static HTML/React preview, Storybook story, local mock route, or existing project playground;
 - reuse existing design-system primitives when cheap, but avoid production data, real side effects, migrations, or auth changes;
 - include at least happy, empty, loading, error, permission, and edge states when relevant;
-- start or identify a preview URL when possible and validate it with the in-app browser or browser-capable QA;
+- start or identify a preview URL when possible and validate it with a browser-capable `qa` subagent; state screenshots are saved as files and referenced by path in `02-ui-prototype.md` — image bytes never enter the orchestrator context (the user is shown the preview URL and screenshot files, not inline dumps);
 - discuss the prototype with the user and update `00-discussion-log.md`, `02-ui-spec.md`, and `02-ui-prototype.md` until the UX/business direction is accepted.
 
 If the session is non-interactive or the user does not review the prototype, apply the same non-interactive fallback as the phase-2 discussion gate: record the direction as an `unconfirmed` assumption in `STATE.md`/`02-ui-prototype.md` (do not mark it `accepted`), and stop before delivery if the open UX/business questions are load-bearing.
@@ -240,9 +254,20 @@ Produce:
 
 In `08-quality-gates.md`, fill the `Gate -> DoD item` mapping table so every DoD item in `09-dod.md` is covered by at least one gate, and every gate points to the DoD item it protects. This mapping is what the `quality gates are mapped to the DoD` exit criterion checks.
 
+#### Workorder Sizing (blocking rule)
+
+Workorders are sized for a fresh-context worker, not for conceptual neatness. Delivery spawns one worker with a clean context per workorder, so a workorder that does not fit one worker in one sitting will fail its sizing gate at delivery pre-flight and come back here. Rules:
+
+- **1–3 atomic tasks per workorder, listed in a `Task Breakdown` section.** An atomic task is one coherent edit unit — one endpoint, one component, one migration, one config surface, one test suite — roughly one commit.
+- **Fits in about half of a fresh worker context.** Count what the worker must load: the workorder itself, the named AIRD doc sections, the files it will open, and its own diff. If the honest estimate exceeds that, split.
+- **Split by seams, sequence by dependency.** Prefer splitting along layer or surface boundaries (API vs UI vs migration), keep write sets disjoint, and express ordering through `Depends on` — never through "part 1 of a big blob".
+- **Name sections, not packages.** The docs-to-read list points at specific files and sections; a workorder that says "read the whole AIRD package" is oversized by definition.
+- An implementation slice that genuinely cannot be split (rare) must say why in the workorder and be flagged high-risk so delivery reviews it per-workorder.
+
 Each workorder must be independently executable and include:
 
 - objective;
+- task breakdown (1–3 atomic tasks, per the sizing rule above);
 - allowed read paths and write paths;
 - required AIRD docs to read;
 - `$code-review-standards` references to load before coding/review (`universal.md`, `structure-reuse-performance.md`, plus stack-specific refs);
@@ -265,6 +290,7 @@ The AIRD package is ready for delivery when all of these conditions hold:
 - UX framing and UI spec exist for user-facing UI, dashboards, forms, workflows, or visual changes;
 - UI prototype notes and mock-state acceptance exist for user-facing UI, dashboards, forms, workflows, or visual changes;
 - every implementation slice has a workorder with allowed write scope;
+- every workorder passes the sizing rule: a `Task Breakdown` of 1–3 atomic tasks that a fresh-context worker can complete in one sitting (or an explicit justified exception flagged high-risk);
 - every workorder has its `Must Haves` sections filled (Truths, Artifacts, and Key Links where wiring matters);
 - API/data/model changes are explicit;
 - quality gates are mapped to the DoD;

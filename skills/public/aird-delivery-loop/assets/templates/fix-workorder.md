@@ -21,6 +21,12 @@
 - Extra context allowed:
 - Extra context forbidden:
 
+## Task Breakdown
+
+Sizing rule: 1–3 atomic tasks max; a fix workorder is the smallest change that resolves the finding, in one fresh worker context. If the fix is bigger than that, it is not a fix — split it or route back to discovery.
+
+1. 
+
 ## Fix Scope
 
 - Recommended agent:

@@ -10,7 +10,9 @@ last_updated: ''
 - Feature:
 - AIRD path:
 - Active workorder:
+- Current wave (done / in progress / remaining):
 - Current gate:
+- Delivery brief (inline or path — a fresh session continues from this, not from re-reading the package):
 
 ## Completed Work
 
