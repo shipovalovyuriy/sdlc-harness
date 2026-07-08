@@ -19,6 +19,9 @@
 - Mock scenarios to preserve in tests/fixtures:
 - Relevant files or directories:
 - Current behavior:
+- Current-state evidence:
+- Rejected alternatives to avoid re-opening:
+- Assumptions this workorder may rely on:
 
 ## Subagent Context Package
 
@@ -37,6 +40,8 @@
 - Allowed read paths:
 - Allowed write paths:
 - Out of scope:
+- Decisions the worker must not make:
+- Stop-and-report conditions:
 
 ## Contracts
 
@@ -47,17 +52,21 @@
 - UI spec constraints:
 - Prototype acceptance notes:
 - Compatibility requirements:
+- Observability/audit requirements:
+- Rollout/fallback requirements:
 
 ## Must Haves
 
 ### Truths
 
 - Observable behavior:
+- Non-regression truths:
+- Failure/edge-case truths:
 
 ### Artifacts
 
-| Path | Provides | Substantive check |
-|---|---|---|
+| Path | Provides | Substantive check | Evidence required |
+|---|---|---|---|
 
 ### Key Links
 
@@ -67,6 +76,9 @@
 ## Acceptance Criteria
 
 - 
+- The implementation honors the listed decisions and does not re-decide architecture.
+- Each medium/high linked risk has passing evidence or an explicit blocker.
+- All changed contracts, data paths, and user-visible behavior are covered by verification.
 
 ## Verification
 
@@ -75,6 +87,9 @@
 - Reviewer focus:
 - Standards focus: project structure / function design / reuse / duplication / optimization / language conventions
 - Evidence required to pass (fail-closed — no vacuous pass): test output / command exit / screenshot / API response / diff
+- Negative/edge cases:
+- Rollback/fallback check:
+- Observability/audit check:
 - Verification levels: exists / substantive / wired / functional
   - exists: file/endpoint/component/migration/test is present.
   - substantive: real implementation, not a placeholder or stub.

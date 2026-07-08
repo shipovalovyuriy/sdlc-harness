@@ -2,17 +2,17 @@
 
 Use these routes when `08-quality-gates.md` does not specify a stronger project rule.
 
-See `references/gates.md` for the gate taxonomy (pre-flight / revision / escalation / abort). Every row in the table below is a revision gate: it runs after output is produced and loops blocking findings into a scoped fix workorder with bounded retries.
+See `references/gates.md` for the gate taxonomy (pre-flight / revision / escalation / abort). The table below lists required gate types by change category; it does not imply that every gate runs after every workorder. Use the delivery skill's Review Scheduling Policy: reviewer and QA normally run once after an integrated batch, while workers run targeted tests after their own work. Run per-workorder reviewer only for high-risk/security/data/API/shared-core boundaries or explicit AIRD requirements.
 
 | Change type | Required gates |
 |---|---|
-| Backend/API/data | tests, reviewer, QA integration checks |
-| Frontend behavior | tests/build, reviewer, QA, browser verification |
+| Backend/API/data | targeted tests per worker; reviewer and QA integration checks at batch end unless high-risk |
+| Frontend behavior | tests/build per worker; reviewer, QA, and browser verification at batch end unless high-risk |
 | Visual/UI/UX | browser verification, usability check (qa + `usability-tester` skill), QA |
-| Auth/permissions/secrets | tests, reviewer, cybersec, QA negative paths |
-| Migration/schema | migration tests or dry run, reviewer, rollback check |
+| Auth/permissions/secrets | tests, per-workorder reviewer when scoped, cybersec, QA negative paths |
+| Migration/schema | migration tests or dry run, per-workorder reviewer when irreversible or shared, rollback check |
 | Docs-only | docs review and link/render check when applicable |
 
-Browser verification and the usability check are run by `qa` with the `verify-on-browser`/`playwright` or `usability-tester` skill loaded — none of these is a standalone agent. Blocking findings must become scoped fix workorders (`assets/templates/fix-workorder.md`).
+Browser verification and the usability check are run by `qa` with the `verify-on-browser`/`playwright` or `usability-tester` skill loaded — none of these is a standalone agent. Prefer one browser/usability pass after the UI batch is runnable; run earlier only for a prototype or flow decision that would block downstream work. Blocking findings must become scoped fix workorders (`assets/templates/fix-workorder.md`).
 
 For implementation gates, do not accept file existence alone. Check whether each relevant artifact exists, is substantive, is wired into the system, and works functionally through tests, browser checks, QA, or user-visible evidence.

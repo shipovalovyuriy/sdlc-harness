@@ -19,7 +19,7 @@ Do not begin delivery without an implementation-ready package. The minimum requi
 
 ## Required Inputs
 
-A full AIRD package contains all of these; read every one that exists. The hard requirement to start is only the minimum from the Operating Model (workorders + quality gates + DoD). If the user supplies an equivalent brief, normalize it into that minimum package shape first, then read whichever of the docs below are present.
+A full AIRD package contains all of these. Inventory every file that exists, but do not paste or repeatedly re-read the whole package into the main context. The hard requirement to start is only the minimum from the Operating Model (workorders + quality gates + DoD). If the user supplies an equivalent brief, normalize it into that minimum package shape first, then read whichever of the docs below are present.
 
 Read:
 
@@ -42,6 +42,20 @@ Read API/data docs when present:
 - `05-api-contracts.md`;
 - `06-data-models.md`.
 
+## Context And Token Budget Discipline
+
+Delivery cost is driven by orchestration history, tool output, repeated doc loading, and verification loops more than by final diff size. Keep the loop evidence-backed but compact:
+
+- Build a compact delivery brief after pre-flight: workorder order, locked decisions, risk gates, allowed paths, required commands, and DoD. Use this brief as the main-session working memory instead of carrying full AIRD docs in every step.
+- Pass workers file paths and narrow excerpts, not full package contents. Each worker reads only its workorder and the specific AIRD docs named by that workorder.
+- Cap command output deliberately. Prefer `rg -n` with tight patterns, `sed -n` ranges, `git diff --stat`, `git diff -- <paths>`, targeted tests, and log tails. Avoid broad `rg` over the whole repo, full lockfiles, full build logs, or whole test transcripts unless debugging requires them.
+- When a command can produce large output, write the full log to a file and return only: command, exit code, counts, failing lines, and log path. Do not paste thousands of lines into chat.
+- Keep the main session out of raw source unless integration requires it. Let workers inspect implementation files; the main session should inspect diffs, touched paths, and targeted snippets.
+- After each phase, summarize durable state into `STATE.md`/`.continue-here.md` and continue from that summary instead of re-reading previous tool output.
+- Treat subagent results as summaries with evidence pointers. Do not paste entire subagent transcripts, full test logs, or full file contents back into the main thread.
+
+For small or low-risk diffs, choose the narrowest gate set allowed by `08-quality-gates.md` and `references/verification-gates.md`: targeted tests plus focused reviewer/QA checks are usually enough. Do not run browser/usability/security/docs gates unless the change type or AIRD gates require them.
+
 ## Independence Rules
 
 - Spawn one worker per independent workorder.
@@ -61,7 +75,7 @@ Build a small execution map:
 - recommended agent;
 - allowed write paths;
 - dependencies;
-- required verification gates for this workorder (e.g. tests, reviewer, qa, browser, usability, cybersec — derived from `08-quality-gates.md` and `references/verification-gates.md` by change type);
+- required verification gates for this workorder or its integration batch (e.g. tests, reviewer, qa, browser, usability, cybersec — derived from `08-quality-gates.md` and `references/verification-gates.md` by change type);
 - code standards refs to load from `$code-review-standards` (always `universal.md` and `structure-reuse-performance.md`, plus frontend/backend/API/security/language/testing refs by stack);
 - must_haves: truths, artifacts, and key links;
 - risk level (from `03-risk-register.md` or the workorder `Priority`).
@@ -81,6 +95,21 @@ node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/script
 It cross-checks `STATE.md` against the filesystem (status enum, artifacts the state calls done actually exist, gated statuses have the baseline set and workorders). It is structural, not semantic — it does not judge content quality, so run it in addition to the reviewer/QA gates, not instead of them.
 
 Group workorders into parallel batches only when write paths and dependencies do not collide.
+
+### Review Scheduling Policy
+
+Default to one reviewer pass after a coherent implementation batch is integrated, not after every small workorder. Workers should run targeted tests and report evidence after their own work; the reviewer checks the integrated diff against the AIRD package, DoD, standards, and risk gates once the related workorders are together.
+
+Run per-workorder reviewer only when the workorder is high-risk or crosses a boundary where delayed review would make fixes expensive:
+
+- auth, permissions, secrets, PII, tenant isolation, or security-sensitive callbacks;
+- migrations, schema changes, backfills, retention, or irreversible data transformations;
+- public API/event contracts, compatibility-sensitive behavior, or SDK/user-facing contracts;
+- shared framework/core files, concurrency/idempotency logic, rollout/fallback machinery, or deployment manifests;
+- a workorder explicitly marked high priority/high risk in `03-risk-register.md`, `08-quality-gates.md`, or the workorder itself;
+- a worker reports a blocker, architectural ambiguity, or deviation from AIRD.
+
+For low-risk workorders with disjoint files, skip intermediate reviewer calls. Record `reviewer: deferred to integration batch` in `STATE.md` or the delivery notes, then run one focused reviewer on the final batch diff. If a reviewer finds blocking issues, create scoped fix workorders and re-run reviewer only on the affected diff plus the original finding, not on the whole repository again unless the fix broadens scope.
 
 ### 2. Spawn Implementation Agents
 
@@ -116,6 +145,8 @@ For each worker, pass:
 - required tests and verification;
 - instruction to edit files directly and report changed paths.
 
+Keep worker prompts compact. If a workorder lists many docs, pass the exact paths plus the few locked decisions and risk gates relevant to that workorder; do not copy every AIRD section into the prompt.
+
 ### 3. Integrate
 
 After workers finish:
@@ -129,13 +160,15 @@ After workers finish:
 
 ## Verification Phase
 
-Run verification after integration, not only inside workers.
+Run verification after integration. Workers run their own targeted checks, but reviewer/QA gates normally run once on the integrated batch unless the Review Scheduling Policy requires an earlier per-workorder gate.
 
 Required gates:
 
 - project tests/lint/typecheck/build named in `08-quality-gates.md`;
 - `reviewer` with `$code-review-standards` loaded for code correctness, regressions, project structure, function boundaries, reuse/duplication, optimization, maintainability, and missing tests;
 - `qa` for acceptance criteria, edge cases, negative paths, and integration behavior.
+
+For small backend/tooling work with a tiny scoped diff, make reviewer and QA focused and run them at batch end: changed paths, relevant workorders, risk gates, test evidence, and acceptance criteria. Broad repository-wide review is reserved for broad or cross-cutting changes.
 
 Every verification pass must check four levels where applicable: exists, substantive, wired, and functional. Do not accept file existence alone as implementation.
 
@@ -167,7 +200,7 @@ For each verification finding:
 1. Classify severity and affected DoD item.
 2. Create or update a scoped fix workorder from `assets/templates/fix-workorder.md`.
 3. Assign the smallest appropriate worker.
-4. Re-run only impacted tests first, then the full required gate set.
+4. Re-run only impacted tests first, then the smallest required gate set for the affected diff. Re-run reviewer/QA only when the fix touches reviewed behavior, risk boundaries, or the original finding area.
 5. Repeat until no blocking findings remain, with a maximum of 3 revision attempts per finding group.
 6. Escalate to the user if the blocking issue count does not decrease between attempts or the third attempt still has blockers.
 

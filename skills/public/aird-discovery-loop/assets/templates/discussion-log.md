@@ -18,15 +18,15 @@ Use this to keep discovery interactive and decision-backed.
 
 One row per question, asked one at a time (see the discovery skill's `references/interview.md`): each is a closed A/B/C/D question with a recommended default.
 
-| Question | Options | Recommended Default | User Decision | Rationale |
-|---|---|---|---|---|
+| Question | Options | Recommended Default | User Decision | Rationale | Affects | Evidence needed |
+|---|---|---|---|---|---|---|
 
 ## Architectural Decisions
 
 Enumerate the load-bearing decisions for this task (see the discovery skill's "Architectural Decisions To Surface"). One row per decision; status `open` until the user (or the recorded non-interactive assumption) resolves it.
 
-| Category | Decision | Options | Recommended Default | User Decision | Status (open/locked/unconfirmed) | Affects |
-|---|---|---|---|---|---|---|
+| Category | Decision | Options | Recommended Default | User Decision | Rationale | Rejected Alternatives | Status (open/locked/unconfirmed) | Affects |
+|---|---|---|---|---|---|---|---|---|
 
 Categories: placement/boundaries, reuse-vs-build, data/state, api/contracts, failure/concurrency, security/access, rollout/reversibility, non-functional, tradeoffs/alternatives.
 
@@ -41,6 +41,8 @@ Use this section for risk questions generated during the discussion gate. A risk
 
 - Decision:
   - Rationale:
+  - Evidence:
+  - Alternatives rejected:
   - Applies to:
   - Affects artifacts:
 
@@ -75,3 +77,5 @@ Use this section for risk questions generated during the discussion gate. A risk
 - UX/UI notes for UI spec:
 - Technical notes for TRD:
 - Risk notes for risk register:
+- Workorder notes:
+- Documentation gaps before `ready_for_delivery`:

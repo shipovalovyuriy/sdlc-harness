@@ -30,6 +30,7 @@ Optional codebase map:
 - Known surfaces:
 - Initial success criteria:
 - Open questions:
+- Evidence needed before delivery:
 
 ## 00-discussion-log.md
 
@@ -41,9 +42,11 @@ Optional codebase map:
 - Decisions locked:
 - Risk mitigations locked:
 - Rationale:
+- Alternatives rejected:
 - Deferred ideas:
 - Must not constraints:
 - Remaining open questions:
+- Assumptions still unconfirmed:
 
 ## 01-prd.md
 
@@ -56,6 +59,8 @@ Optional codebase map:
 - User stories:
 - Acceptance criteria:
 - Metrics or observable signals:
+- Evidence from user/repo:
+- Delivery implications:
 
 ## 02-ux-problem-framing.md
 
@@ -66,6 +71,8 @@ Optional codebase map:
 - Edge cases:
 - Accessibility and responsiveness:
 - Trust and comprehension risks:
+- Alternatives rejected:
+- Acceptance signals:
 
 ## 02-ui-spec.md
 
@@ -80,6 +87,7 @@ Optional codebase map:
 - Accessibility expectations:
 - Visual constraints:
 - Browser/usability verification notes:
+- Prototype/QA evidence required:
 
 ## 02-ui-prototype.md
 
@@ -99,17 +107,25 @@ Optional codebase map:
 | Risk | Category | Severity | Confidence | Discussion decision / assumption | Mitigation | Evidence gate / cheapest test | Decision rule | Affects |
 |---|---|---:|---:|---|---|---|---|---|
 
+Every medium/high risk must name the decision, mitigation owner or workorder, and evidence gate that closes it. Leave the package unready while a medium/high risk has no closure path.
+
 ## 04-trd.md
 
 - Architecture summary:
 - Current state:
+- Current-state evidence (paths/endpoints/tables/commands/runtime observations):
 - Proposed state:
 - Boundaries:
 - Data flow:
+- Interfaces and contracts:
+- Sequence/control flow:
 - Dependencies:
+- Failure modes and concurrency/idempotency:
 - Rollout and fallback:
 - Observability:
 - Compatibility:
+- Alternatives rejected:
+- Assumptions and open technical questions:
 
 ## 05-api-contracts.md
 
@@ -120,6 +136,8 @@ Optional codebase map:
 - Auth/permissions:
 - Compatibility:
 - Tests:
+- Backward/forward compatibility notes:
+- Observability/audit signals:
 
 ## 06-data-models.md
 
@@ -130,6 +148,8 @@ Optional codebase map:
 - Backfill:
 - Invariants:
 - Retention/privacy:
+- Rollback/fallback:
+- Data correctness gates:
 
 ## 07-implementation-plan.md
 
@@ -138,6 +158,8 @@ Optional codebase map:
 - Dependencies:
 - Integration points:
 - Rollback:
+- Order constraints:
+- Evidence each milestone must produce:
 
 ## 08-quality-gates.md
 
@@ -152,6 +174,7 @@ Optional codebase map:
 - QA scenarios:
 - Usability checks:
 - Security checks:
+- Documentation depth check:
 
 ### Gate -> DoD Mapping
 
@@ -169,3 +192,4 @@ Every DoD item must be covered by at least one gate; every gate must point to th
 - Observability:
 - Docs:
 - Release:
+- Ready-for-delivery evidence:

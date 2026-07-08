@@ -13,6 +13,9 @@ progress:
   artifacts_complete: 0
   workorders_total: 0
   workorders_ready: 0
+quality:
+  documentation_depth: pending
+  medium_high_risks_have_gates: pending
 ---
 
 # AIRD State
@@ -54,6 +57,12 @@ Status values: `discovery` (in discovery), `ready_for_delivery` (all exit criter
 ## Delivery Evidence
 
 - `10-ui-verification.md`: produced during delivery for user-facing changes; not counted in discovery artifact progress.
+
+## Readiness Checks
+
+- Documentation depth: pending / pass / blocked
+- Medium/high risks have mitigation owners and evidence gates: pending / pass / blocked
+- Workorders are executable without parent chat: pending / pass / blocked
 
 ## Decisions
 
