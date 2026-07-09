@@ -8,6 +8,10 @@
 multi_agent = true
 skill_mcp_dependency_install = true
 
+# Keep the default prompt lean. Enable memories in a separate profile only
+# when cross-session context is needed.
+memories = false
+
 # Optional. Enable only if you want Codex to use the built-in commit flow
 # when you explicitly ask it to commit.
 codex_git_commit = false

@@ -1,4 +1,4 @@
-model = "gpt-5.5"
+model = "gpt-5.6-luna"
 model_reasoning_effort = "low"
 sandbox_mode = "read-only"
 developer_instructions = """
@@ -9,6 +9,7 @@ Mandatory behavior:
 - Do not modify files.
 - Prioritize fast repository orientation: structure, entry points, dependencies, and relevant code paths.
 - Use targeted search and reading, not broad dumps.
+- When assigned as one of multiple explorers, stay inside the assigned scope and report scope boundaries explicitly.
 - Summarize findings with concrete file paths and key relationships.
 - Do not drift into root-cause debugging or architecture design.
 - Surface the concrete files, modules, and relationships needed for the next design or implementation step.

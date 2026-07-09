@@ -1,90 +1,75 @@
-# ExecPlans
+# Global Codex Guidance
 
-Always use the OpenAI developer documentation MCP server if you need to work with the OpenAI API, ChatGPT Apps SDK, Codex, or other OpenAI developer tooling unless a more specific user instruction overrides it.
+Keep this file limited to durable defaults that should apply across repositories.
+Repository-specific commands, conventions, and ownership rules belong in the
+closest repository or directory `AGENTS.md`.
 
-Use an ExecPlan only for complex features, significant refactors, multi-service changes, schema or API contract changes, migrations, or unresolved high-impact tradeoffs.
+# OpenAI Developer Tooling
 
-Use `architect` for normal non-trivial design that can be handed off as an Implementation Brief.
+Use the OpenAI developer documentation MCP server when working with the OpenAI
+API, ChatGPT Apps SDK, Codex, or other OpenAI developer tooling, unless the user
+provides a more specific source or instruction.
 
-Use `architect-deep` only when the task crosses the ExecPlan threshold above. In those cases, `architect-deep` must produce a full ExecPlan that conforms to `/Users/shipovalovyuriy/.codex/.agent/PLANS.md`.
+# Planning
+
+- Use an ExecPlan only for complex features, significant refactors,
+  multi-service changes, schema or API contract changes, migrations, or
+  unresolved high-impact tradeoffs.
+- ExecPlans must conform to
+  `/Users/shipovalovyuriy/.codex/.agent/PLANS.md`.
+- For normal non-trivial work, keep a brief implementation plan with explicit
+  success criteria and verification steps.
+
+# AIRD
+
+`$aird-discovery-loop` and `$aird-delivery-loop` own their orchestration,
+delegation, artifacts, workorders, and quality gates. Apply their rules only
+when the user explicitly invokes an AIRD skill or the sibling AIRD skill hands
+off to it.
+
+Inside AIRD, `04-trd.md`, `07-implementation-plan.md`, and
+`workorders/*.md` replace a standalone ExecPlan and remain the implementation
+source of truth.
 
 # Working Style
 
-These rules reduce common LLM coding mistakes. They bias toward caution over speed; for trivial tasks, use judgment.
+- State assumptions when they materially affect the solution.
+- Surface materially different interpretations instead of choosing silently.
+- Prefer the simplest approach that satisfies the request.
+- Treat explicitly requested libraries, SDKs, frameworks, CLIs, models, and
+  external tools as hard requirements. Verify the real dependency or API before
+  substituting anything.
+- Write the minimum code required. Do not add abstractions, configurability, or
+  adjacent cleanup without a concrete need.
+- Make surgical changes and preserve unrelated user work.
+- Match the existing codebase style and conventions.
+- Remove code only when the requested change makes it obsolete.
 
-Think before coding:
-- Do not assume silently. State assumptions when they affect the solution.
-- If a request has multiple plausible interpretations, surface the options instead of choosing invisibly.
-- If a simpler approach exists, mention it and push back when the requested path looks overbuilt.
-- If the missing context makes a reasonable implementation risky, stop, name the uncertainty, and ask.
+# Execution And Verification
 
-Keep it simple:
-- Write the minimum code that solves the requested problem.
-- Do not add features, abstractions, configurability, or defensive branches that were not asked for or justified by the existing system.
-- If a solution grows much larger than the problem, simplify before proceeding.
+- Convert the request into concrete success criteria before implementation.
+- For bugs, reproduce the failure or add a focused failing test when practical.
+- Test both valid and invalid paths that prove the requested behavior.
+- Verify changes in proportion to risk and continue until the success criteria
+  pass or a concrete blocker remains.
+- Diagnose without implementing when the user asks only for analysis.
+- Do not commit, push, deploy, publish, message external systems, or perform
+  destructive operations unless the user requests that action.
 
-Make surgical changes:
-- Touch only what is required for the user's request.
-- Do not refactor, reformat, or "improve" adjacent code unless it is needed for the task.
-- Match existing style even when a different style would be preferable in isolation.
-- Mention unrelated dead code or cleanup opportunities instead of deleting them.
-- Remove imports, variables, functions, or files only when your own change made them unused or obsolete.
-- Every changed line should trace back to the request.
+# Delegation
 
-Execute against a goal:
-- Convert the task into concrete success criteria before implementing.
-- For bugs, prefer a reproducing test or direct reproduction before the fix when practical.
-- For validation, test invalid and valid paths that prove the requested behavior.
-- For refactors, verify behavior before and after when the cost is reasonable.
-- For multi-step tasks, keep a brief plan with the verification attached to each step.
-- Loop until the agreed or inferred success criteria are verified, or clearly state what could not be verified.
+Outside explicitly invoked AIRD skills, do not spawn subagents unless the user
+explicitly asks for delegation or parallel work. Handle ordinary repository
+searches and known-file reads directly.
 
-# Agents
+When delegation is explicitly requested outside AIRD, send a compact,
+self-contained task. Prefer `fork_turns = "none"` or `"1"`; pass more history
+only when the subagent genuinely needs it.
 
-Primary rule:
-- Spawn or delegate to agents only when the user explicitly asks for delegation, sub-agents, or parallel agent work.
-- Without that explicit request, handle the task in the main thread, even when the task is non-trivial or a specialist agent could help.
+# Validation
 
-Direct handling is preferred when:
-- the work is trivial: one command, one factual answer, one small patch, one file read, or one short explanation
-- the task is tightly scoped and already specifies the target files or directories, the exact behavior change, constraints or non-goals, acceptance criteria, and verification steps
-- the change is limited to a small number of files or a single clear bugfix
-
-When the user explicitly requests delegation:
-- every response that delegates MUST include at least one agent in `agents`
-- delegate each non-trivial task to the smallest appropriate specialist instead of defaulting to broad or expensive agents
-- apply the routing guidance below
-
-Use `triage` first when the correct route is unclear.
-Use `debugger` first for bugs or regressions in a roughly known area before implementation begins.
-Use `explorer` to map relevant files, code paths, and current behavior before design or implementation when the implementation surface is not yet concrete.
-Use `architect` for normal non-trivial design and decomposition that should end in an Implementation Brief rather than a full ExecPlan.
-Require `architect` to produce an Implementation Brief before implementation begins on a non-trivial task unless the user already provided exact files, the exact behavior delta, constraints, acceptance criteria, and verification steps.
-Use `architect-deep` only when the task crosses the ExecPlan threshold above.
-The main thread MUST NOT spawn `worker`, `backend-worker`, or `frontend-worker` directly for a non-trivial task unless an Implementation Brief already exists or the user already provided:
-- explicit target files or directories
-- the exact requested behavior change
-- constraints or non-goals
-- acceptance criteria
-- tests or verification steps
-Prefer `backend-worker` or `frontend-worker` when a specialization clearly fits. Use `worker` only when the task is already concrete but does not map cleanly to a more specialized implementation role.
-Use `supervisor` immediately when the plan or task scope indicates more than 3 agents or parallel workstreams will be needed.
-Do not directly manage more than 3 non-supervisor agents in parallel from the main thread.
-Skip `explorer` and `architect` when a task is already implementation-ready: known target files or directories, exact requested behavior change, constraints or non-goals, acceptance criteria, and verification steps are all present.
-Use `explorer` only when a quick local scan still leaves the relevant files, code paths, or ownership boundaries unclear.
-
-Default routing guidance for delegated non-trivial tasks:
-- trivial, one-shot, or tiny concrete patch: direct handling
-- known files plus exact requested delta, constraints, acceptance, and verification: direct handling for a tightly scoped small change, otherwise specialized worker or worker
-- bug or regression in a roughly known area: debugger, then specialized worker or worker
-- unclear implementation surface: explorer, then architect
-- normal non-trivial design: architect
-- plan-worthy change at the ExecPlan threshold: architect-deep, then ExecPlan-guided implementation
-- more than 3 parallel workstreams: supervisor
-
-Validation guidance:
-- use `reviewer` for code-centric risk, regressions, missing tests, and maintainability review
-- use `qa` for browser, integration, and user-visible acceptance validation
-- use both only for high-risk user-facing changes
-- skip `reviewer` for trivial or tightly scoped low-risk changes that are already covered by focused tests or direct verification
-- skip `qa` unless the change is user-visible, browser-driven, integration-heavy, or the user explicitly asks for acceptance validation
+- Use focused tests or direct verification for low-risk localized changes.
+- Use code review for meaningful regression or maintainability risk.
+- Use browser or integration QA for user-visible, browser-driven, or
+  integration-heavy changes.
+- Keep validation proportional; do not add review layers mechanically.

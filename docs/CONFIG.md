@@ -20,10 +20,29 @@ The AIRD workflow expects multi-agent execution:
 [features]
 multi_agent = true
 skill_mcp_dependency_install = true
+memories = false
 
 [agents]
 max_threads = 6
 max_depth = 1
+```
+
+## Memory Profile
+
+Memories are disabled in the default config to avoid injecting cross-repository
+context into every turn and subagent. Enable them only when a task needs
+cross-session continuity:
+
+```toml
+# ~/.codex/memory.config.toml
+[features]
+memories = true
+```
+
+Start that profile with:
+
+```bash
+codex --profile memory
 ```
 
 ## Optional Commit Support
