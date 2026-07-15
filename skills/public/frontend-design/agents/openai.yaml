@@ -1,4 +1,4 @@
 interface:
   display_name: "Frontend Design"
-  short_description: "Design polished, structured web UI"
-  default_prompt: "Use $frontend-design to design and implement a production-grade interface with strong hierarchy, spacing, typography, color systems, and finishing details."
+  short_description: "Design and visually verify polished web UI"
+  default_prompt: "Use $frontend-design to design and implement a production-grade interface, inspect the relevant positive visual exemplars, treat red-X frames only as failures, and verify the rendered result on desktop and mobile."

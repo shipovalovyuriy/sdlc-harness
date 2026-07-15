@@ -20,6 +20,15 @@ Overlapping panels, media, or cards can add hierarchy and momentum, but only whe
 - Be careful with user-uploaded imagery; it can break composition and contrast assumptions.
 - If the UI depends heavily on images, design for ugly or low-quality assets as well as perfect ones.
 
+## Turn Empty States Into A Next Step
+
+- Match the empty state to its cause instead of showing the same generic message everywhere.
+- For first use, explain the value briefly and offer one clear action such as create, import, or invite.
+- For zero search results, preserve the query and suggest changing terms or filters.
+- After clearing content, offer undo or recovery when the action is safely reversible.
+- Distinguish true emptiness from loading, permission, offline, and error states; each needs different guidance.
+- Use illustration or motion only when it adds context or tone. The next action must remain the focal point.
+
 ## Finishing Moves That Usually Help
 
 - improve default lists, dividers, and bullets instead of adding new decorative components
@@ -48,4 +57,5 @@ Do not use finishing touches to compensate for:
 - Do shadows and overlap reinforce a coherent sense of depth?
 - Are images resilient to real-world content?
 - Do empty and sparse states still feel designed?
+- Does each empty state explain what happened and provide the most useful next step?
 - Does polish increase clarity or mood without adding noise?

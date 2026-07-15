@@ -36,6 +36,20 @@ Read this before final delivery. If the design depends on several of these mista
 - Treating empty states as an afterthought
 - Assuming clean marketing imagery or perfect user-uploaded images
 
+## Form And Interaction Anti-Patterns
+
+- Mirroring the final output so literally that the form loses labels, validation, logical order, or mobile usability
+- Using identical field widths when they actively misrepresent the expected length of stable inputs
+- Styling selectable cards without preserving radio-group semantics, focus visibility, or a clear selected state
+- Treating a small icon as the entire touch target
+- Placing a frequent mobile CTA in a hard-to-reach area without a task or platform reason
+
+## Navigation Anti-Patterns
+
+- Adding icons, descriptions, or images to every dropdown item until nothing is visually prioritized
+- Building a multi-column menu without clear category headings or predictable reading order
+- Shrinking a desktop mega menu onto mobile instead of designing a mobile disclosure pattern
+
 ## AI Slop Anti-Patterns
 
 - Defaulting to the same centered hero, soft gradient blob, and three-card feature grid regardless of context
