@@ -16,6 +16,12 @@ Common red flags:
 - log-only actions or click handlers that do nothing;
 - files created but never imported, registered, routed, or called;
 - tests that only assert existence and not behavior.
+- required tests reported as skipped, not discovered, unavailable, or not run even when the runner exits 0;
+- clean-install-only migration tests with no previous-release upgrade fixture;
+- edits to already-shipped migration files instead of a new forward migration;
+- source tests without building and starting the deployable artifact;
+- static reviewer parity or mocked UI responses used as backend runtime evidence;
+- verdicts such as `PASS with residual risk`, `evidence debt`, or `wired-but-skipped`.
 
 Map verification to `must_haves`:
 

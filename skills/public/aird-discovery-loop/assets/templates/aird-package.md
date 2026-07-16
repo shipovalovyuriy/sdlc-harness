@@ -9,6 +9,7 @@ Use this template as the target artifact set under `.agent/aird/<feature-slug>/`
 - `codemap.md` - hierarchical map of the change-relevant code; agents work from it (non-trivial changes).
 - `codebase/` - optional deeper current-state map for broad or unfamiliar codebases.
 - `prototype/` - optional UI mock stand for user-facing work.
+- `10-backend-verification.md` - delivery runtime evidence for backend/runtime changes.
 - `10-ui-verification.md` - delivery browser/usability evidence for user-facing changes.
 
 Optional codebase map:
@@ -153,6 +154,9 @@ Every medium/high risk must name the decision, mitigation owner or workorder, an
 
 ## 07-implementation-plan.md
 
+- First vertical slice and public flow:
+- Product workorders required for the first slice:
+- Supporting workorders and detour budget:
 - Milestones:
 - Workorders:
 - Dependencies:
@@ -163,7 +167,9 @@ Every medium/high risk must name the decision, mitigation owner or workorder, an
 
 ## 08-quality-gates.md
 
-- Pre-flight gates:
+- Implementation-readiness gates:
+- Runtime-verification-readiness gates:
+- Release-readiness gates:
 - Revision gates:
 - Escalation gates:
 - Abort gates:
@@ -185,11 +191,13 @@ Every DoD item must be covered by at least one gate; every gate must point to th
 
 ## 09-dod.md
 
+- Product implementation complete:
+- Runtime verification complete:
+- Release ready:
 - Functional:
 - Technical:
 - UX:
 - Tests:
 - Observability:
 - Docs:
-- Release:
-- Ready-for-delivery evidence:
+- Runtime evidence blockers that do not block implementation:

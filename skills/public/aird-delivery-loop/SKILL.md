@@ -1,6 +1,6 @@
 ---
 name: aird-delivery-loop
-description: "Explicit ARiD/AIRD delivery loop for implementing an existing AIRD package through independent execution and verification subagents. Use only when the user explicitly invokes $aird-delivery-loop, says AIRD/ARiD delivery, or asks to execute workorders from an existing AIRD package. Runs implementation workers with $code-review-standards guidance, tests, code review, QA, browser checks for web apps, usability checks for UX flows, and fix loops until DoD/quality gates pass. Context is disposable, disk is memory: the orchestrator stays lean, checkpoints to STATE.md, and re-spawns instead of compacting."
+description: "Explicit ARiD/AIRD delivery loop for implementing an existing AIRD package through independent execution and verification subagents. Use only when the user explicitly invokes $aird-delivery-loop, says AIRD/ARiD delivery, or asks to execute workorders from an existing AIRD package. Prioritizes the first product slice, limits supporting detours, blocks oversized workers before spawn, allows reversible implementation before runtime fixtures are available, and keeps runtime evidence fail-closed for release and completion."
 ---
 
 # AIRD Delivery Loop
@@ -11,7 +11,7 @@ Run this as the main-session orchestration skill. The main session reads the AIR
 
 The core rule that keeps token spend sane: **no long-lived all-remembering orchestrator.** Everything durable lives in files (`STATE.md`, `.continue-here.md`, workorders, evidence files); the orchestrator context is a disposable working buffer. A fresh session must always be able to continue from `STATE.md` alone.
 
-- **Checkpoint, don't compact.** After pre-flight, after each integrated wave, and after each verification gate, write the durable outcome into `STATE.md`. When the main context passes ~50% of the window, or before starting a new wave with a heavy tail of tool output behind you, write `.continue-here.md` (from `assets/templates/continue-here.md`) and continue in a fresh session from it. Hitting auto-compaction is a process failure: it means the checkpoint was late. Never rely on compaction to carry state.
+- **Checkpoint, don't compact.** After pre-flight, after each integrated wave, and after each verification gate, write the durable outcome into `STATE.md`. When the main context passes ~80% of the window, or before starting a new wave with a heavy tail of tool output behind you, write `.continue-here.md` (from `assets/templates/continue-here.md`) and continue in a fresh session from it. Hitting auto-compaction means the checkpoint was late. Never rely on compaction to carry state.
 - **Workers always start fresh.** A worker gets its workorder file, the named AIRD doc paths, and standards refs — never the parent transcript. One workorder = one fresh worker context, one coherent commit-sized change.
 - **The orchestrator never holds raw bulk.** Full logs, screenshots, and file contents live on disk; the orchestrator holds verdicts, counts, and paths.
 
@@ -19,9 +19,9 @@ Explicit invocation of this skill counts as an explicit request for delegation a
 
 Use `supervisor` only when delivery requires more than 3 workers/agents running in parallel at the same time. Otherwise the main session drives waves directly, with each parallel batch at 3 or fewer agents (including verification agents).
 
-Use `references/gates.md` for gate behavior, `references/revision-loop.md` for bounded defect loops, `references/verification-patterns.md` for real-implementation checks. Set `status: in_delivery` in `STATE.md` when execution starts.
+Use `references/gates.md` for gate behavior, `references/revision-loop.md` for bounded defect loops, `references/verification-patterns.md` for real-implementation checks, and `references/backend-runtime-gates.md` whenever a wave touches backend/API/data/migrations/jobs/queues/deployable service artifacts. Use the discovery skill's `references/profiles-and-schema.md` as the canonical readiness, product-first, detour, and Workorder V3 contract. Set `status: in_delivery` only when `ready_for_implementation: ready`.
 
-Do not begin delivery without an implementation-ready package. The minimum to start: `workorders/*.md` with allowed write scope and task breakdown, `08-quality-gates.md`, and `09-dod.md` (or an equivalent brief specifying the same). If the user supplies an equivalent brief, first normalize it into a lightweight AIRD package (the minimum files plus `STATE.md`); do not spawn workers from loose prose. If even this minimum is missing or vague, stop and recommend `$aird-discovery-loop` — that recommendation counts as an explicit invocation of discovery.
+Do not begin delivery without an implementation-ready package. The minimum to start is `STATE.md` with `ready_for_implementation: ready`, sized `workorders/*.md`, `08-quality-gates.md`, and `09-dod.md`. If the user supplies an equivalent brief, normalize it into that lightweight package before spawning. If the minimum is missing or vague, stop and recommend `$aird-discovery-loop`; the user's explicit acceptance is still required before opening a new AIRD package.
 
 ## Required Inputs
 
@@ -36,40 +36,81 @@ Hard requirement: `workorders/*.md`, `08-quality-gates.md`, `09-dod.md`, `STATE.
 - allowed paths per workorder;
 - exact gate commands (test/lint/build/deploy-check) from `08-quality-gates.md`;
 - DoD items and which gate proves each.
+- every gate's criticality: `required` or `optional`; required gates cannot be self-deferred by an agent;
+- backend runtime profile: production dependency types/dialects, previous-release upgrade source, deployable artifact command, health/API/business-flow smoke commands.
+- first vertical slice, work class per workorder, detour counters, and worker watchdog state.
 
 ## Context Budget Hard Rules
 
-These are blocking rules, not preferences. Violating them is what turns a delivery run into a 100M+ token session.
+These are blocking rules:
 
-1. **Batch checks into one compound command.** Never issue `git status`, `git diff --check`, `git diff --stat`, or an ssh health-check as separate serial calls when one compound command answers the question: `git status --short && git diff --stat && go test ./... 2>&1 | tail -30`. Every extra tool call replays the entire context.
-   Cap every listing command that can explode: `| head -50` on `git ls-files --others`, `find`, `ls -R`, and any recursive listing — build caches and artifact dirs turn an innocent listing into 100K+ tokens. If a listing overflows, filter (exclude cache/artifact dirs) instead of scrolling it.
-2. **No chunk-polling of long-running processes.** For builds, test suites, deploys, and remote scripts: redirect full output to a log file, run to completion (in the background if needed), then read the verdict once — exit code, counts, `tail -30`, and the log path. Never stream 30-second output chunks into the conversation, never poll a running process with repeated reads. If a process needs watching, a single wait-then-tail beats N polls.
-3. **Images never enter the orchestrator context.** Screenshots are evidence files: save to disk, record the path in `10-ui-verification.md`. Only a QA subagent (fresh context, discarded after the verdict) opens pixels. The orchestrator receives pass/fail per state plus paths.
-4. **Subagent results are summaries with pointers.** A worker or verifier returns: status, changed paths, commands run with exit codes, evidence file paths, blockers — not transcripts, not full logs, not file contents. If a result exceeds ~40 lines, it belongs in a file with a path returned instead.
-5. **Read once, brief forward.** AIRD docs, skill references, and standards files are read once at the phase that needs them. If you notice yourself re-reading the same reference, the delivery brief is missing a line — fix the brief, don't re-read.
-6. **Verify per wave, not per twitch.** Gate commands run once after a wave integrates (plus targeted tests a worker runs on its own diff). Re-running the full gate set after every micro-fix is the second-biggest token sink after polling.
-7. **Checkpoint and re-spawn beats one long session.** The trigger is concrete, not a vibe: when context usage crosses ~50% of the window, the **very next action** is writing `STATE.md` + `.continue-here.md` and continuing fresh — not "after this one more step". Between waves is always a legal cut point; take it if the tail of tool output behind you is heavy. A fresh session re-reading a one-page brief is orders of magnitude cheaper than dragging 150K tokens of dead tool output through every subsequent call. Reaching 60%+ during mere planning means rule 1 or the pre-flight delegation was violated — fix that, don't push on.
+1. Batch related checks and cap recursive listings.
+2. Write long command output to logs; return exit, counts, tail, and path once.
+3. Keep screenshots on disk; only disposable QA contexts open pixels.
+4. Require worker/verifier summaries with status, paths, commands, evidence, and blockers; results over 40 lines belong in files.
+5. Read AIRD sources once and carry a one-page brief forward.
+6. Run full gates per integrated wave, not after every micro-edit.
+7. At 80 percent orchestrator context, write `STATE.md` and `.continue-here.md`, then continue fresh.
 
-For small or low-risk diffs, choose the narrowest gate set allowed by `08-quality-gates.md` and `references/verification-gates.md`: targeted tests plus one focused reviewer/QA pass at batch end. Do not run browser/usability/security/docs gates unless the change type or AIRD gates require them.
+For small or low-risk diffs, choose the narrowest gate set allowed by `08-quality-gates.md` and `references/verification-gates.md`: targeted tests plus one focused reviewer/QA pass at batch end. Narrowing may reduce scope, but it may never replace a required production-dialect/runtime, migration-upgrade, deployable-artifact, or API/business-flow gate with unit tests or static review. Do not run browser/usability/security/docs gates unless the change type or AIRD gates require them.
+
+## Product-First And Detour Gate
+
+Before the first vertical slice is functional, schedule the smallest product
+workorders that wire its public flow. Do not prioritize a runtime harness,
+tooling project, generalized evidence framework, or other supporting work over
+that slice unless it is the one small enabling workorder inside the detour
+budget.
+
+Before every supporting spawn, read `STATE.md`. Stop and request explicit user
+approval when supporting work would exceed one small workorder or 20 percent of
+delivery effort. Stop before creating any separate supporting AIRD package
+unless the user explicitly approved that package. Update product file count,
+supporting WIP, delivery percentage, and time/cycles without user value at every
+checkpoint.
 
 ## Workorder Sizing Gate
 
-A workorder is executable only if a single worker can complete it in one fresh context without degradation. At pre-flight, check every workorder against:
+A workorder is executable only if Workorder Frontmatter V3 passes strict lint
+and one fresh worker can complete it without degradation. Reject it before
+spawn when it has:
 
-- it has a **Task Breakdown of 1–3 atomic tasks** (an atomic task = one coherent edit unit: one endpoint, one component, one migration, one config surface — roughly one commit);
-- the worker can finish it while staying within about half of a fresh context window (inputs + files it must open + its own diff);
-- its docs-to-read list names specific files/sections, not "the whole package".
+- more than one runtime boundary;
+- Kubernetes, database, SCM, and registry responsibilities together;
+- more than 8 implementation acceptance scenarios;
+- build, start, health, live, rollback, and cleanup together;
+- more than 3 atomic tasks, more than one ownership/write seam, whole-package
+  reading, or an honest estimate above half a fresh context.
 
-An oversized or unsplit workorder is a **blocking pre-flight gap**: do not spawn a worker on it and do not split it yourself ad hoc mid-delivery. Route it back to discovery (or run a scoped normalization step that rewrites it into 2+ sequenced workorders with disjoint write sets, recorded in `STATE.md`) before execution. Oversized workorders are exactly what produce mid-worker compactions, re-reading loops, and half-done diffs.
+An oversized workorder is a blocking pre-flight gap with no high-risk exception.
+Do not spawn it. Route it to discovery for 2+ sequenced workorders with disjoint
+write sets and update `STATE.md` before execution.
 
 ## Independence Rules
 
 - Spawn one worker per independent workorder; group independent workorders into **waves** (parallel where write sets and dependencies do not collide, sequential otherwise).
-- Prefer `fork_context=false` for workers. Pass only the workorder path, the named AIRD doc paths, and standards refs. Note: `fork_context=true` cannot be combined with a role `agent_type`, so keep `fork_context=false` whenever you spawn a role like `backend-worker`/`frontend-worker`.
+- Spawn workers with `fork_turns: none` or `fork_turns: "1"`. Put the working
+  role in the task name and message, and pass only the workorder path, named
+  AIRD doc paths, and standards refs.
 - Keep write sets disjoint. If two workorders need the same file, sequence them or create an integration workorder.
 - A worker must not choose architecture. If the brief is insufficient, the worker STOPs and reports a blocker; the main session routes it back to `architect`/discovery.
 - Workers report changed files, tests run, contract deviations, and blockers.
 - No empty or vacuous results. A worker or verification agent must never return blank or a bare acknowledgment. If it cannot access what it needs or cannot reach a verdict, it returns an explicit blocker; an empty result is a blocking failure, not a pass. A `reviewer`/`qa` gate that cannot read files or reach a verdict returns a blocking REVISE with the reason, never an implicit pass.
+
+## Worker Watchdog
+
+The orchestrator owns wall-clock and context enforcement; do not rely on the
+worker to notice its own overrun. Record worker start and checkpoint state in
+`STATE.md`.
+
+- If no focused test has run within 30 minutes, interrupt the worker, preserve
+  its diff, mark `sizing failure`, and split the workorder.
+- If several partial files exist but no declared product Key Link is wired,
+  stop immediately as a sizing failure.
+- If the worker reaches about 50 percent of its context without completing the
+  workorder, stop and split before compaction.
+- After a watchdog stop, do not continue the same workorder or issue unlimited
+  follow-ups. Create smaller sequenced workorders and use fresh workers.
 
 ## Execution Phase
 
@@ -80,9 +121,30 @@ Delegate package reading to one pre-flight reader subagent (see Required Inputs)
 Run pre-flight gates before spawning anything:
 
 - minimum package exists and is readable; equivalent briefs are normalized first;
+- `STATE.md` has `ready_for_implementation: ready`;
 - **Workorder Sizing Gate passes for every workorder** (see above);
+- the first runnable wave advances the named first product slice;
+- supporting work is inside the detour budget or has explicit user approval;
 - write sets are disjoint or explicitly sequenced;
 - each workorder has verifiable `must_haves` (content quality, not filename presence).
+- every quality gate is classified `required` or `optional`; if a gate protects a DoD item, production contract, migration, persistence boundary, or deployable runtime, classify it `required`;
+- every backend/API/data/migration workorder names the required runtime boundary,
+  production dependency type/dialect, and intended non-skipping verification
+  command. Missing actual infrastructure or fixtures sets
+  `ready_for_runtime_verification: blocked`; it does not block reversible
+  implementation;
+- migration workorders identify the required fresh-install and previous-release
+  fixture contracts. Actual fixture availability is checked before runtime
+  verification. Editing an already-shipped migration remains an implementation
+  blocker unless the package proves it was never applied;
+- API or deployable-service workorders define the intended artifact
+  build/start/health and live smoke contract where applicable. The commands may
+  remain unexecuted until runtime verification;
+- when `02-ui-prototype.md` exists, treat it and every declared prototype
+  artifact as an implementation source of truth. Block pre-flight unless each
+  UI implementation and final browser/usability workorder names them in
+  frontmatter `docs_to_read` and verifies prototype interactions, responsive
+  composition, and intentional deviations.
 
 Run the deterministic state check and treat a non-zero exit as a blocking gap:
 
@@ -90,45 +152,95 @@ Run the deterministic state check and treat a non-zero exit as a blocking gap:
 node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-validate.mjs" ".agent/aird/<feature-slug>"
 ```
 
-It is structural, not semantic — run it in addition to reviewer/QA gates, not instead of them.
+It checks package structure plus machine-readable UI/backend evidence invariants; it does not judge behavioral correctness. Run it in addition to reviewer/QA/runtime gates, not instead of them.
 
 Group workorders into waves. Record the wave plan in `STATE.md`, then write the delivery brief. From this point the brief, not the package, is the working memory.
 
 ### 2. Spawn Implementation Agents
 
-Route by scope: `backend-worker` (backend/APIs/services/data/migrations), `frontend-worker` (UI behavior/implementation), `worker` (small mixed/tooling), `debugger` first for bug isolation, `cybersec` for auth/secrets/permissions/sensitive data/external callbacks. Prefer the cheapest agent tier that can do the job: mechanical, well-specified tasks go to plain workers; reserve heavyweight roles for design-ambiguous or high-risk workorders.
+Label the bounded task by scope: `backend-worker`
+(backend/APIs/services/data/migrations), `frontend-worker` (UI behavior),
+`worker` (small mixed/tooling), `debugger` (bug isolation), or `cybersec`
+(auth/secrets/permissions/sensitive data/external callbacks). These are task
+labels and prompt responsibilities, not special spawn parameters.
 
-Standards via `$code-review-standards`: always `universal.md` + `structure-reuse-performance.md`; `frontend.md`/`typescript-react.md` for React/TS frontend; `backend.md` + `api-design.md` + language file for backend; `security.md` for auth/permissions/secrets/PII/callbacks/multi-tenant data; `testing.md` when tests or behavior change; `community-awesome.md` only for tooling choices with primary-source verification.
+Use `$code-review-standards` with a hard context cap:
 
-Per worker, pass: one workorder path; named AIRD doc paths; selected standards refs and the instruction to use Worker Mode before coding; the few locked decisions/risk gates relevant to this workorder; UX/UI constraints for user-facing work; allowed read/write scope; required tests; instruction to edit files directly, run its own targeted tests with output to a log file, and report the summary-with-pointers shape from the Context Budget Hard Rules. Keep prompts compact — paths and constraints, not copied AIRD sections.
+- a worker loads **at most 3 refs**, a reviewer **at most 4** — only those matching the languages/surfaces actually present in its workorder or diff;
+- load `universal.md`, `structure-reuse-performance.md` for non-trivial work,
+  and only the one relevant stack/specialty ref;
+- never load both frontend and backend stacks into one agent — if a workorder genuinely spans both, that is a sizing failure: split it.
+
+Per worker, pass: one workorder path; named AIRD doc paths; selected standards
+refs; work class and vertical slice; locked decisions/risk gates; allowed scope;
+the first focused test; and the Worker Watchdog stop conditions. Require direct
+edits, targeted tests, wired Key Link evidence, and a summary with pointers.
+Keep prompts compact.
 
 ### 3. Integrate (per wave)
 
-After a wave finishes: inspect the diff (`git diff --stat` then targeted `git diff -- <paths>`); resolve conflicts; ensure no changes escaped allowed scope unless justified; update AIRD notes on deviations; update `STATE.md` with completed workorders, blockers, next action; create follow-up workorders for unresolved blockers. **This is a checkpoint** — if context is past ~50%, write `.continue-here.md` and continue fresh before verification.
+After a wave finishes: inspect the diff; resolve conflicts; ensure no changes
+escaped allowed scope; update AIRD deviations; mark workorders `done`; and
+update `STATE.md` readiness, product file count, first-slice state, supporting
+WIP/share, cycles/minutes without user value, blockers, and next action. Create
+scoped follow-up workorders only inside the sizing and detour rules. This is a
+checkpoint; if context is past ~80%, write `.continue-here.md` and continue
+fresh before verification.
 
 ### Review Scheduling Policy
 
-Default to one reviewer pass per integrated wave, not per workorder. Workers run targeted tests on their own diff; the reviewer checks the integrated wave diff against the AIRD package, DoD, standards, and risk gates.
+Default to one reviewer per integrated wave plus one final reviewer. Use a
+per-workorder reviewer only for a named trigger:
 
-Run per-workorder reviewer only when the workorder is high-risk or crosses an expensive boundary: auth/permissions/secrets/PII/tenant isolation; migrations/schema/backfills/irreversible data changes; public API/event contracts or SDK-facing behavior; shared framework/core files, concurrency/idempotency, rollout/fallback machinery, deployment manifests; explicitly marked high risk; or a worker reported a blocker/deviation.
+- auth, permissions, secrets, PII, or tenant isolation;
+- irreversible migration, schema, or backfill behavior;
+- public API, event, or SDK contract compatibility;
+- shared-core concurrency, idempotency, rollout/fallback, or deployment-manifest behavior;
+- an explicit `high-risk` marker in the workorder with a named risk-register entry;
+- a worker-reported blocker or contract deviation that cannot safely wait for wave integration.
 
-For low-risk workorders with disjoint files, record `reviewer: deferred to wave batch` in `STATE.md` and run one focused reviewer on the wave diff. If a reviewer finds blocking issues, create scoped fix workorders and re-run reviewer only on the affected diff plus the original finding.
+Record the trigger and boundary in `STATE.md`. Backend code or tests alone are
+not high risk. Do not manufacture singleton waves for review. After a finding,
+review only the affected fix against the original finding; keep unrelated
+coverage for the final reviewer.
 
 ## Verification Phase
 
-Run verification once per integrated wave (and once at the end across the final state). Gate commands come from the delivery brief; their full output goes to log files, and only exit codes, counts, failing lines, and log paths enter the conversation.
+Run verification once per integrated wave and once at the end across the final state. This does not authorize an extra reviewer after each workorder: reviewer scheduling remains governed by the policy above. Gate commands come from the delivery brief; their full output goes to log files, and only exit codes, executed/passed/failed/skipped counts, failing lines, and log paths enter the conversation.
 
 Required gates:
 
 - project tests/lint/typecheck/build named in `08-quality-gates.md`;
-- `reviewer` with `$code-review-standards` loaded — correctness, regressions, structure, reuse/duplication, maintainability, missing tests;
+- `reviewer` with `$code-review-standards` loaded (max 4 refs, per the standards cap) — correctness, regressions, structure, reuse/duplication, maintainability, missing tests;
 - `qa` for acceptance criteria, edge cases, negative paths, integration behavior.
+
+Give reviewers the wave diff, its workorders, and protected DoD lines only.
+Review from hunks and open the minimum surrounding source. Diff review cannot
+replace runtime verification.
 
 Every verification pass must check four levels where applicable: **exists, substantive, wired, functional**. File existence alone is not implementation.
 
-**Fail-closed rule:** a gate is "passed" only with concrete evidence attached — test output with counts, a command exit status, a screenshot file path with a DOM assertion, an API response, or a diff. A gate with no evidence is a blocking failure, not a pass. Never record a vacuous pass. If evidence cannot be produced (no runner, no preview, environment missing), mark the gate `blocked-no-evidence` and escalate or explicitly defer it in `STATE.md`. Record the evidence pointer (log path, command, screenshot file, DoD line) next to each gate result.
+**Fail closed:** PASS requires executed checks and concrete evidence, not exit 0.
+Any required skip, unavailable check, or unverified result is
+`blocked-no-evidence`. A user waiver still keeps `ready_for_release: blocked`
+and cannot produce `complete`. Keep `implementation_complete` when code is done;
+use `paused` only when no safe progress or a user decision remains.
 
-Conditional gates: UI Verification Protocol (below) for any user-facing change — mandatory; `cybersec` for security-sensitive changes; `docs` when user-facing or operational docs must change.
+Conditional gates: Backend Runtime Verification Protocol (below) for backend/API/data/migration/deployable-service changes — mandatory; UI Verification Protocol for user-facing changes — mandatory; `cybersec` for security-sensitive changes; `docs` when user-facing or operational docs must change.
+
+When implementation workorders are done but required runtime/browser fixtures or
+targets are unavailable, set `status: implementation_complete`, keep
+`ready_for_runtime_verification` and `ready_for_release` blocked, and record the
+missing inputs. Do not create a supporting runtime-evidence project or undo
+implementation readiness without explicit user approval.
+
+### Backend Runtime Verification Protocol (mandatory for backend changes)
+
+Read and execute `references/backend-runtime-gates.md` only when
+`ready_for_runtime_verification: ready`. It is the canonical protocol for real
+dependencies, migrations, shipped artifacts, live contracts, and zero-skip
+evidence. If readiness is blocked, preserve `implementation_complete` and
+release `NO-GO`. Browser checks run only after backend runtime passes.
 
 ### UI Verification Protocol (mandatory for user-facing changes)
 
@@ -136,10 +248,16 @@ A change is **user-facing** if it touches frontend files (components, pages/rout
 
 1. **Launch a target.** Start the dev server / build a preview in the background with output to a log file, and get a concrete URL — or identify an already-running one. No running target → mark the gate `blocked-no-evidence`, escalate, do NOT mark complete. (This is the step the loop most often skips.)
 2. **Drive it in a real browser — inside a QA subagent.** Spawn `qa` with the `verify-on-browser` (CDP) or `playwright` skill loaded. It navigates the URL, walks the primary flow from `02-ux-problem-framing.md`/`02-ui-spec.md` plus each required state (happy, empty, loading, error, permission-denied), and **saves a screenshot file per state**. Screenshots stay on disk; the subagent returns a per-state pass/fail verdict plus file paths. The orchestrator never loads image bytes into its own context.
-3. **Usability check.** Same or a second `qa` subagent with the `usability-tester` skill loaded (it is a skill, not an agent — do not spawn it as an `agent_type`); intake from `02-ui-spec.md`/`02-ui-prototype.md`; compare the running UI against the accepted prototype direction and mock states.
+3. **Usability check.** Same or a second `qa` task with the
+   `usability-tester` skill named in its prompt; intake comes from
+   `02-ui-spec.md`/`02-ui-prototype.md`. Compare the running UI against the
+   accepted prototype direction and mock states.
 4. **Record evidence.** Write `10-ui-verification.md` from `assets/templates/ui-verification.md`: preview mode + URL, per-state pass/fail table with screenshot paths, usability findings, issues found/fixed. This file is what the fail-closed rule and `aird-validate.mjs` require.
 
-If a live preview is genuinely unavailable, fall back to `qa` review against the UI spec and prototype states — but record the fallback and the missing browser evidence explicitly in `10-ui-verification.md` and `STATE.md`. Never silently skip the gate or report it passed.
+If a live preview is unavailable, a `qa` review against the UI spec may record
+partial evidence, but the browser gate remains `blocked-no-evidence`. Record the
+fallback, keep `status: implementation_complete` when product implementation is
+done, and keep `ready_for_release: blocked`; never report delivery complete.
 
 ## Defect Loop
 
@@ -162,15 +280,18 @@ On pause, blockage, or a context checkpoint, write `.continue-here.md` from `ass
 
 Delivery is complete only when:
 
-- all required workorders are done or explicitly deferred;
+- all required workorders are done; optional workorders may be explicitly deferred;
 - tests and quality gates pass, each with evidence attached (fail-closed — no vacuous passes);
 - reviewer has no blocking findings;
 - QA accepts the DoD against concrete evidence, not assertion;
-- for user-facing changes, `10-ui-verification.md` exists with a real preview URL and a per-state pass/fail table (screenshot paths), or explicitly records why the preview was unavailable;
-- the usability check has no blocking UX findings for user-facing flows, or is explicitly deferred when browser control is unavailable;
+- backend changes have `10-backend-verification.md` with zero failed/skipped checks and all required runtime, upgrade, artifact, API, and business-flow results passing;
+- for user-facing changes, `10-ui-verification.md` exists with a real preview URL and a per-state pass/fail table backed by screenshot paths;
+- the usability check has no blocking UX findings for user-facing flows;
 - security-sensitive changes have been reviewed;
 - required docs updates are done or explicitly deferred;
-- `STATE.md` shows `status: complete` or a clearly documented deferred state;
+- `STATE.md` shows `ready_for_release: ready` and `status: complete`; a missing
+  runtime target, required-gate waiver, or deferred required work keeps release
+  blocked while implementation may remain `implementation_complete`;
 - final diff is scoped and explainable.
 
 ## Final Response

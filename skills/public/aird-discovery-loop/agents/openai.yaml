@@ -1,6 +1,6 @@
 interface:
   display_name: "AIRD Discovery Loop"
-  short_description: "Create PRD/TRD/DoD from independent discovery"
+  short_description: "Create linted PRD/TRD/DoD and delivery workorders"
   default_prompt: "Use $aird-discovery-loop to turn this feature idea into an AIRD package."
 
 policy:

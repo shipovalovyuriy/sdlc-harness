@@ -16,16 +16,16 @@ Use this to keep discovery interactive and decision-backed.
 
 ## Questions Asked
 
-One row per question, asked one at a time (see the discovery skill's `references/interview.md`): each is a closed A/B/C/D question with a recommended default.
+One row per user-facing question, asked one at a time (see `references/interview.md`). Normal mode stops when the important decisions are resolved and has a hard cap of 10 questions total; do not copy the unused candidate inventory here.
 
 | Question | Options | Recommended Default | User Decision | Rationale | Affects | Evidence needed |
 |---|---|---|---|---|---|---|
 
 ## Architectural Decisions
 
-Enumerate the load-bearing decisions for this task (see the discovery skill's "Architectural Decisions To Surface"). One row per decision; status `open` until the user (or the recorded non-interactive assumption) resolves it.
+Record asked decisions plus only consequential agent-defaulted decisions. The category list is a scan checklist, not a requirement to create one question or row per category. Use `defaulted` when repository evidence or a safe reversible recommendation resolves an unasked implementation choice; leave `User Decision` blank.
 
-| Category | Decision | Options | Recommended Default | User Decision | Rationale | Rejected Alternatives | Status (open/locked/unconfirmed) | Affects |
+| Category | Decision | Options | Recommended Default | User Decision | Rationale | Rejected Alternatives | Status (open/locked/unconfirmed/defaulted) | Affects |
 |---|---|---|---|---|---|---|---|---|
 
 Categories: placement/boundaries, reuse-vs-build, data/state, api/contracts, failure/concurrency, security/access, rollout/reversibility, non-functional, tradeoffs/alternatives.
@@ -78,4 +78,4 @@ Use this section for risk questions generated during the discussion gate. A risk
 - Technical notes for TRD:
 - Risk notes for risk register:
 - Workorder notes:
-- Documentation gaps before `ready_for_delivery`:
+- Documentation gaps before `ready_for_implementation: ready`:

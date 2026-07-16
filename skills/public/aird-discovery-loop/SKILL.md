@@ -7,23 +7,23 @@ description: "Explicit ARiD/AIRD discovery loop for turning a non-trivial featur
 
 ## Operating Model: Context Is Disposable, Disk Is Memory
 
-Run this as the main-session orchestration skill. The main session owns the loop, spawns independent subagents, integrates results, and decides when the AIRD package is ready. Do not create a separate permanent orchestrator unless the user asks for one.
+Run this as the main-session orchestrator. Durable decisions live in the package;
+a fresh session must resume from `STATE.md` and `00-discussion-log.md`.
 
-The same token model as `$aird-delivery-loop` applies: **no long-lived all-remembering orchestrator.** Everything durable lives in the package files; the orchestrator context is a disposable working buffer, and a fresh session must be able to continue from `STATE.md` + `00-discussion-log.md` alone.
-
-- **Phase boundaries are checkpoints.** After each discovery phase (intake, discussion, recon, product/UX, risks, TRD, plan), write the durable outcome into the package and `STATE.md`. When context usage crosses ~50% of the window, the very next action is `STATE.md` + `.continue-here.md` and continuing in a fresh session. Hitting auto-compaction means the checkpoint was late — never rely on compaction to carry state.
-- **The orchestrator holds decisions, not bulk.** Subagents (`explorer`, `product-analyst`, `architect`, `risk-analyst`, `uiux-designer`) read sources and write package files directly; they return verdicts, key facts, and paths — not transcripts or file dumps. The orchestrator's working memory is the running decision table plus `STATE.md`, not the docs' contents.
-- **Runtime probing is explorer work.** ssh, kubectl, curl, deploy checks, and log reading during reconnaissance run inside a scoped `explorer` (or a dedicated recon subagent) whose findings land in `codemap.md`/AIRD docs as evidence pointers. The main session never accumulates raw remote output.
-
-Context budget hard rules (same as delivery, blocking, not preferences): batch checks into one compound command instead of serial `git status`/health-check calls; long-running commands write full output to a log file and return exit code + counts + `tail -30` + log path — never stream 30-second chunks or poll a running process; cap every listing that can explode (`| head -50` on `find`, `ls -R`, `git ls-files --others`); screenshots and images never enter the orchestrator context — they are files whose paths go into the package, and only a disposable QA/design subagent opens pixels; subagent results over ~40 lines belong in a file with the path returned; skill references and package docs are read once — if you are re-reading one, a summary line is missing from `STATE.md` or the discussion log.
-
-The interactive discussion gate is the exception that proves the rule: interview turns are cheap only when the context under them is lean. Run the discussion gate early, on top of intake plus a recon *summary* — not on top of a session already bloated by hands-on probing.
+- Checkpoint every phase; at 80 percent context write `STATE.md` and
+  `.continue-here.md`, then continue fresh.
+- Let scoped discovery agents write artifacts and return verdicts plus paths,
+  never transcripts or bulk output.
+- Keep runtime probing and raw logs inside scoped explorer contexts.
+- Batch checks, cap listings, store long logs/screenshots on disk, and read each
+  reference once.
+- Run the discussion gate early from intake plus a recon summary.
 
 Explicit invocation of this skill counts as an explicit request for delegation and parallel agent work: its spawning instructions have priority over the general no-delegation rule in `AGENTS.md`. Do not ask the user for permission before each spawn.
 
 Use `supervisor` only when the discovery will require more than 3 agents running in parallel at the same time or needs active collision/progress management. Otherwise, the main session coordinates fan-out/fan-in directly.
 
-Use `references/gates.md` for gate behavior and `references/interview.md` for the discussion-gate questioning protocol (one decision at a time, A/B/C/D + recommendation, Normal/Grill). Maintain a small `STATE.md` in the AIRD package after every meaningful phase transition so a fresh session can resume without parent chat history.
+Use `references/gates.md` for gate behavior and `references/interview.md` for the discussion protocol. Read `references/profiles-and-schema.md` at intake; it is the single source for readiness, product-first, detour, and Workorder Frontmatter V3. Maintain `STATE.md` after every meaningful phase transition so a fresh session can resume without parent chat history.
 
 Default output path:
 
@@ -45,6 +45,32 @@ Scale the package to the task. The full set is the ceiling, not a mandate for ev
 
 This keeps discovery aligned with the `AGENTS.md` "keep it simple / minimum viable output" principle instead of generating documents for their own sake.
 
+### Choose A Discovery Profile At Intake
+
+Record `discovery_profile: lite|standard|deep` in `STATE.md` using
+`references/profiles-and-schema.md`:
+
+- `lite`: localized, reversible, low/medium risk;
+- `standard`: cross-layer or material single-service contracts/rollout;
+- `deep`: security boundary, infrastructure, migration, multi-service, or
+  high-impact rollout.
+
+Risk and irreversibility override size. The profile controls artifact depth,
+recon fan-out, packet review, and execution-wave requirements; it never weakens
+the documentation depth floor or a security gate.
+
+### Product-First Is A Blocking Invariant
+
+Plan the first implementation wave around the smallest working public product
+flow. Before that vertical slice is functional, permit at most one small
+supporting workorder and at most 20 percent supporting delivery effort without
+explicit user approval. Stop when either limit is exceeded.
+
+Do not create a separate supporting AIRD package before the first functional
+slice unless the user explicitly approves that package. Runtime-evidence
+projects, harnesses, and tooling packages are supporting work. Record product
+files, supporting WIP, and time/cycles without user value in `STATE.md`.
+
 ## Documentation Depth Standard
 
 Every AIRD document must be useful to a fresh delivery agent that has no parent transcript. Do not pad documents with generic prose, but do make the load-bearing reasoning explicit. A document is deep enough only when it answers:
@@ -64,18 +90,26 @@ Never mark a document complete when it only restates headings, contains generic 
 ## Independence Rules
 
 - Spawn one independent subagent per discrete discovery task.
-- Prefer `fork_context=false` for subagents. Pass only the user request, relevant file paths, this skill name, and the precise scope. Note: `fork_context=true` cannot be combined with a role `agent_type` — a full-history fork is only possible for a roleless subagent, so keep `fork_context=false` whenever you need a specific role (`explorer`, `architect`, etc.).
+- Spawn bounded tasks with `fork_turns: none` or `fork_turns: "1"`. Put the
+  working role (`explorer`, `architect`, reviewer, and so on) in the task name
+  and message; pass only the request, relevant paths, this skill name, and the
+  precise scope.
 - Run several same-role agents when scopes are independent, for example one `explorer` per service, layer, package, or suspected code path.
 - Do not ask one subagent to solve product, architecture, code discovery, and risk analysis together.
 - Subagents must return evidence and artifacts, not broad essays.
 - Never accept an empty or bare-"done" subagent result. Every subagent returns at minimum: what it did, the files/artifacts it produced or changed, and a one-line summary. If it could not do the task (missing file, blocked access, ambiguous brief), it returns that as an explicit blocker with the reason — silence or a vacuous "ok" is treated as a failure, not success.
 - Fan-in is owned by the main session: reconcile conflicts, mark assumptions, and decide whether another loop is needed.
+- Workorder review is packetized by write seam. A reviewer reads at most 7
+  workorders plus named plan/gate sections. Never ask one reviewer to absorb the
+  whole deep package.
+- Run deterministic lint before each packet review. Human review must spend
+  context on semantics, not missing headings, bad counts, stale IDs, or cycles.
 
 ## Discovery Phases
 
 ### 1. Intake
 
-In a git repository, first create or switch to the `aird/<feature-slug>` branch — the branch name is what activates the AIRD guard hooks (edit gate, tool budget, context checkpoint); discovery run on another branch loses that protection. During discovery all writes stay inside the package dir, so the edit gate does not get in the way.
+In a git repository, first create or switch to the `aird/<feature-slug>` branch to isolate the AIRD change and make its package easy to resume. The branch name does not activate AIRD behavior: only the user's explicit invocation of this skill does. Ordinary tasks remain ordinary even when they run in the same repository or on an `aird/*` branch. During discovery, keep writes inside the package directory until delivery starts.
 
 Create or update `00-intake.md` and initialize `STATE.md` from `assets/templates/state.md` with:
 
@@ -85,6 +119,12 @@ Create or update `00-intake.md` and initialize `STATE.md` from `assets/templates
 - constraints, non-goals, and open questions;
 - repo, service, or surface boundaries if known;
 - initial success criteria.
+
+Also choose the discovery profile and initialize the three readiness fields from
+`references/profiles-and-schema.md`. `status: ready_for_delivery` means only
+`ready_for_implementation: ready`. Missing runtime environment access or
+fixtures may block runtime verification and release, but not reversible product
+implementation when contracts and verification plans are known.
 
 At intake, collect open questions into `00-intake.md`/`00-discussion-log.md` but do not ask them yet, unless a missing answer would make even reconnaissance unsafe or meaningless. Surface them one at a time at the phase-2 discussion gate via the interview protocol (`references/interview.md`) — only those that would change product scope, UX flow, API shape, data model, rollout risk, or quality gates.
 
@@ -102,13 +142,19 @@ Create or update `00-discussion-log.md` from `assets/templates/discussion-log.md
 - explicit non-goals and "must not" constraints;
 - questions that remain open.
 
-Use a discussion gate when user input would change product scope, UX flow, API shape, data model, rollout risk, or quality gates. Run it as a **one-decision-at-a-time interview** — see `references/interview.md` for the protocol: closed A/B/C/D questions each carrying a recommended default, highest-impact decision first, codebase-first (skip what the repo already decides), and Normal/Grill modes. Do not dump a batch of questions — each answer decides the next one, and a running summary table keeps the user oriented.
+Use a discussion gate only when user input would materially change product scope, UX flow, an irreversible API/data decision, security/privacy, rollout risk, or acceptance criteria. Run it as a **focused one-decision-at-a-time interview** — see `references/interview.md`: closed A/B/C/D questions with a recommended default, highest-impact first, codebase-first, and a hard Normal-mode cap of 10 user-facing questions for the entire discovery. Stop earlier as soon as the remaining choices have safe defaults; 10 is a ceiling, not a target. Do not turn every architectural category or open detail into a question. Infer conventional, low-risk, reversible implementation choices from the repository, record them as agent defaults, and keep moving. Grill mode may expand the interview only when the user explicitly asks for it.
 
 #### Risk-Driven Questions And Mitigations
 
-Run risk analysis inside the discussion gate, not only after the PRD/TRD are drafted. Use `risk-analyst` when available; load `rat` for riskiest assumptions and `rca` when the request is driven by an incident, regression, recurring defect, or process failure.
+Run a bounded risk-analysis task inside the discussion gate, not only after the
+PRD/TRD are drafted. Load `rat` for riskiest assumptions and `rca` when the
+request is driven by an incident, regression, recurring defect, or process
+failure.
 
-Ask `risk-analyst` for a short ranked list of risk-driven decisions that need user input before the design can be trusted. It must produce questions, not a standalone report:
+Ask the risk-analysis task for at most the top 2 risk-driven decisions that
+genuinely need user input before the design can be trusted. Merge duplicates
+with product or architecture questions and default the rest into
+mitigations/evidence gates without asking. It must produce:
 
 - risk or assumption;
 - why it matters;
@@ -117,13 +163,13 @@ Ask `risk-analyst` for a short ranked list of risk-driven decisions that need us
 - cheapest invalidating test or evidence gate;
 - affected artifacts (`01-prd.md`, `02-ui-spec.md`, `04-trd.md`, `08-quality-gates.md`, `09-dod.md`, or a workorder).
 
-Surface those questions through `references/interview.md`, one at a time, mixed into the same decision walk as product and architecture. Record each resolved risk in `00-discussion-log.md` under `Risk-Driven Questions And Mitigations`; unresolved high-severity risks remain `open`/`unconfirmed` and block TRD/workorders unless explicitly accepted by the user with a mitigation or spike.
+Surface only the highest-impact questions through `references/interview.md`, one at a time, within the same 10-question Normal-mode cap shared by product and architecture. Record each resolved risk in `00-discussion-log.md` under `Risk-Driven Questions And Mitigations`; unresolved high-severity risks remain `open`/`unconfirmed` and block TRD/workorders unless explicitly accepted by the user with a mitigation or spike.
 
 Risk question categories to scan: value/adoption, UX comprehension, data correctness, API/contract compatibility, security/access, operational failure, rollout/reversibility, performance/cost, observability, and verification evidence. A risk is "mitigated" only when the decision changes scope/design/gates/workorders, not when it is merely listed.
 
 #### Architectural Decisions To Surface
 
-The point of the discussion gate is to keep the user in control of the shape of the solution. Before writing the TRD, actively enumerate the load-bearing decisions for *this* task — do not let them get decided silently inside `architect` or a worker. Scan these categories and surface every decision that is expensive to reverse or that changes the shape of the solution:
+The point of the discussion gate is to keep the user in control of the few decisions that shape the outcome, without making them design every implementation detail. Before writing the TRD, scan the categories below, collapse related decisions, and rank them. Ask only decisions that cannot be safely inferred and that materially affect user-visible scope, irreversible contracts/data, security/privacy, rollout risk, or acceptance criteria. Resolve conventional, repository-established, low-risk, and reversible choices as documented agent defaults.
 
 - **Placement & boundaries** — which service/module/layer this lives in; new component vs extend an existing one; in-process vs network call; sync vs async/eventual.
 - **Reuse vs build** — an existing library/pattern/service vs something new (honor any library the user named as a hard requirement); what to explicitly not reinvent.
@@ -135,9 +181,9 @@ The point of the discussion gate is to keep the user in control of the shape of 
 - **Non-functional targets** — expected scale, latency/performance budget, cost.
 - **Tradeoffs & alternatives** — simplest viable vs extensible-now; what is a non-goal; which alternatives were considered and why they were rejected.
 
-Calibration (this is the fix for "too few questions asked"): these 9 categories are the decision *space*; walk them **one question at a time** via `references/interview.md`, highest-impact first. Surface **every** load-bearing decision even if that is more questions than feels comfortable — a decision is load-bearing if it is costly to reverse later or if a wrong default silently changes the architecture — and skip only the cheap, easily-reversible choices. Each question is closed (A/B/C/D) and carries a recommended default, so it is a fast guided walk, not a wall of prompts; Grill mode is the lever when the user wants every unasked question forced to the surface. When the surface is unfamiliar, run a scoped `architect` pass first whose job is to *produce this list of open decisions with options*, then walk them with the user — `architect` proposes, it does not lock load-bearing choices unilaterally.
+Calibration: these 9 categories are a **scan checklist, not a question checklist**. In Normal mode, rank all candidate decisions, merge overlaps, and ask only as many highest-impact questions as remain necessary, up to a hard cap of 10 user-facing discovery questions total. Stop earlier when remaining choices are safe defaults. Do not exceed 10 unless the user explicitly requests Grill mode or explicitly agrees to continue the interview. For every unasked choice, use repository evidence plus the simplest reversible default and record it in `00-discussion-log.md` as an agent default, not a user decision. If an unasked choice is too high-risk or irreversible to default safely, record it as the blocking open decision instead of compensating with a long interview. When the surface is unfamiliar, run a scoped `architect` pass to rank and collapse candidates before selecting the few questions; `architect` proposes and defaults implementation details, but does not fabricate user decisions.
 
-Record each surfaced decision in `00-discussion-log.md` (Architectural Decisions section) as: decision, options, recommended default, user decision, rationale, and what it affects. Do not proceed to the TRD (phase 6) while a load-bearing architectural decision is still unstated or `unconfirmed`.
+Record asked decisions and material agent-defaulted decisions in `00-discussion-log.md` (Architectural Decisions section) with rationale and impact. Keep `User Decision` blank for agent defaults and mark them `defaulted`. Do not proceed to the TRD (phase 6) while a high-risk or irreversible decision is still open or `unconfirmed`; ordinary reversible implementation details do not require user confirmation.
 
 Non-interactive fallback: if the session is non-interactive or the user does not answer, record the recommended default as an explicit **assumption** (not a user decision), mark it `unconfirmed` in `STATE.md` and `00-discussion-log.md`, and continue if it is safe to do so. Never fill the `User Decision` column yourself. If the unanswered choice is high-risk or irreversible, write `.continue-here.md` and stop instead of assuming.
 
@@ -220,9 +266,16 @@ Each high or medium risk must be tied to one of: a locked discussion decision, a
 
 ### 6. Technical Design
 
-Use `architect` for normal non-trivial design. Use `architect-deep` only when the task crosses the ExecPlan threshold: complex feature, significant refactor, multi-service change, schema/API contract change, migration, or unresolved high-impact tradeoff.
+Use a bounded architecture task for normal non-trivial design. Give it a deeper
+scope only when the task crosses the ExecPlan threshold: complex feature,
+significant refactor, multi-service change, schema/API contract change,
+migration, or unresolved high-impact tradeoff.
 
-If `architect`/`architect-deep` surfaces a load-bearing decision that is not yet locked in `00-discussion-log.md`, stop and return to the phase-2 discussion gate before finalizing the TRD. `architect` proposes options with a recommended default; the user (or an explicitly recorded non-interactive assumption) locks the choice. Do not let a TRD silently encode an unmade architectural decision.
+If the architecture task surfaces a load-bearing decision that is not yet
+locked in `00-discussion-log.md`, stop and return to the phase-2 discussion gate
+before finalizing the TRD. It proposes options with a recommended default; the
+user (or an explicitly recorded non-interactive assumption) locks the choice.
+Do not let a TRD silently encode an unmade architectural decision.
 
 Produce:
 
@@ -252,22 +305,39 @@ Produce:
 - `09-dod.md`;
 - `workorders/*.md`.
 
+Name the first vertical slice in `07-implementation-plan.md`. Its dependency
+spine must reach a focused, wired public product flow before optional tooling or
+runtime-evidence packages. Classify every workorder as product, supporting, or
+verification and initialize the detour counters in `STATE.md`.
+
+Draft the dependency spine and gate/DoD IDs first. Treat shared tables as draft
+until workorder packets pass lint and independent review. After all packets are
+accepted, reconcile `07-implementation-plan.md`, `08-quality-gates.md`,
+`09-dod.md`, and `STATE.md` once from the accepted frontmatter. This avoids
+rebuilding every shared document after an oversized workorder is split.
+
 In `08-quality-gates.md`, fill the `Gate -> DoD item` mapping table so every DoD item in `09-dod.md` is covered by at least one gate, and every gate points to the DoD item it protects. This mapping is what the `quality gates are mapped to the DoD` exit criterion checks.
 
 #### Workorder Sizing (blocking rule)
 
-Workorders are sized for a fresh-context worker, not for conceptual neatness. Delivery spawns one worker with a clean context per workorder, so a workorder that does not fit one worker in one sitting will fail its sizing gate at delivery pre-flight and come back here. Rules:
+Apply every blocking rule in `references/profiles-and-schema.md`. In particular,
+reject before review or spawn any workorder with more than one runtime boundary,
+more than 8 implementation scenarios, the full
+build/start/health/live/rollback/cleanup lifecycle, or more than one ownership
+seam. There is no high-risk exception: split and sequence it.
 
-- **1–3 atomic tasks per workorder, listed in a `Task Breakdown` section.** An atomic task is one coherent edit unit — one endpoint, one component, one migration, one config surface, one test suite — roughly one commit.
-- **Fits in about half of a fresh worker context.** Count what the worker must load: the workorder itself, the named AIRD doc sections, the files it will open, and its own diff. If the honest estimate exceeds that, split.
-- **Split by seams, sequence by dependency.** Prefer splitting along layer or surface boundaries (API vs UI vs migration), keep write sets disjoint, and express ordering through `Depends on` — never through "part 1 of a big blob".
-- **Name sections, not packages.** The docs-to-read list points at specific files and sections; a workorder that says "read the whole AIRD package" is oversized by definition.
-- An implementation slice that genuinely cannot be split (rare) must say why in the workorder and be flagged high-risk so delivery reviews it per-workorder.
+#### Workorder Frontmatter (blocking rule)
+
+Create workorders from `assets/templates/workorder.md` and follow
+`references/profiles-and-schema.md`. Frontmatter V3 is authoritative for
+lifecycle, work class, vertical slice, runtime boundaries, scenario count,
+lifecycle operations, dependencies, gates, write scope, and required reading.
+Use spikes only for one fixed evidence question with a fail-closed outcome.
 
 Each workorder must be independently executable and include:
 
 - objective;
-- task breakdown (1–3 atomic tasks, per the sizing rule above);
+- task breakdown of 1–3 atomic tasks;
 - allowed read paths and write paths;
 - required AIRD docs to read;
 - `$code-review-standards` references to load before coding/review (`universal.md`, `structure-reuse-performance.md`, plus stack-specific refs);
@@ -280,6 +350,21 @@ Each workorder must be independently executable and include:
 
 Workorders are the final test of AIRD depth. A delivery agent must be able to start with only the workorder and listed AIRD docs, then know exactly what to read, what to change, what not to change, and how to prove success. If a workorder still requires the parent conversation or asks the worker to decide architecture, return to discovery instead of starting delivery.
 
+#### Packet Lint And Review
+
+For each write-seam packet:
+
+1. create/update workorders;
+2. run `node <skill>/scripts/aird-lint.mjs <package> --strict-schema`;
+3. fix all deterministic errors;
+4. run an independent semantic/sizing review of that packet only;
+5. mark its review artifact current or superseded;
+6. reconcile shared docs only after every packet passes.
+
+Legacy packages may run the linter without `--strict-schema`; missing V3
+frontmatter is then a warning, while headings, task counts, references, cycles,
+counts, and Gate↔DoD integrity remain enforced.
+
 Use `assets/templates/state.md`, `assets/templates/aird-package.md`, `assets/templates/discussion-log.md`, `assets/templates/ui-spec.md`, `assets/templates/ui-prototype.md`, `assets/templates/workorder.md`, and `assets/templates/continue-here.md` when creating artifacts or pausing.
 
 ## Loop Exit Criteria
@@ -290,24 +375,45 @@ The AIRD package is ready for delivery when all of these conditions hold:
 - UX framing and UI spec exist for user-facing UI, dashboards, forms, workflows, or visual changes;
 - UI prototype notes and mock-state acceptance exist for user-facing UI, dashboards, forms, workflows, or visual changes;
 - every implementation slice has a workorder with allowed write scope;
-- every workorder passes the sizing rule: a `Task Breakdown` of 1–3 atomic tasks that a fresh-context worker can complete in one sitting (or an explicit justified exception flagged high-risk);
+- every new workorder has valid Workorder Frontmatter V3 and belongs to a
+  reviewed packet;
+- every workorder passes every deterministic and semantic sizing rule with no
+  high-risk exception;
 - every workorder has its `Must Haves` sections filled (Truths, Artifacts, and Key Links where wiring matters);
+- the first implementation wave advances the named first vertical slice;
+- supporting work stays within one small workorder and 20 percent or has an
+  explicit user-approved overrun;
+- a supporting package has explicit user approval;
 - API/data/model changes are explicit;
 - quality gates are mapped to the DoD;
 - documentation passes the depth standard: key docs record decisions, rationale, evidence, rejected alternatives, assumptions, and delivery implications proportional to risk;
 - every medium/high risk has a mitigation owner and evidence gate;
 - open questions are non-blocking or assigned to a workorder/spike;
-- no worker needs the full parent conversation to understand its task.
+- no worker needs the full parent conversation to understand its task;
+- the machine-readable dependency graph is complete and acyclic;
+- packages with more than 12 workorders define execution waves;
+- `STATE.md` tracks the three readiness fields plus product files, supporting
+  WIP, and time/cycles without user value.
 
-`STATE.md status: ready_for_delivery` is the consequence of the above, not a separate condition: set it only once every condition holds. It is what `$aird-delivery-loop` pre-flight reads.
+`STATE.md status: ready_for_delivery` is the consequence of the above. Set it
+only when `ready_for_implementation: ready`. Runtime environment/fixtures and
+runtime evidence may remain blocked; record those blockers under
+`ready_for_runtime_verification` and `ready_for_release` instead of preventing
+implementation.
 
-Before setting `status: ready_for_delivery`, run the deterministic state check and make sure it passes — this proves `STATE.md` matches the filesystem instead of rubber-stamping it:
+Before setting `status: ready_for_delivery`, run both deterministic checks and
+make sure they pass — this proves workorder semantics, mappings, state and the
+filesystem agree instead of rubber-stamping them:
 
 ```bash
+node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-discovery-loop/scripts/aird-lint.mjs" ".agent/aird/<feature-slug>" --strict-schema
 node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-validate.mjs" ".agent/aird/<feature-slug>"
 ```
 
-The validator is structural (status enum, claimed-done artifacts exist, gated statuses have the baseline set and workorders); it does not replace the human/agent judgement in the criteria above.
+The AIRD linter validates schema, sizing, dependency graph, coverage, counts and
+Gate↔DoD transpose. The delivery validator checks state/filesystem structure.
+Neither replaces independent semantic review; semantic reviewers should not
+redo defects the linter can prove.
 
 If these conditions are not met, run another scoped discovery loop instead of starting implementation. Cap discovery at 3 iterations; if conditions still are not met after the third, escalate to the user with the remaining gaps and a recommended default rather than looping again.
 
