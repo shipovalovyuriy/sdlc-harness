@@ -96,11 +96,12 @@ Sizing rule: 1–3 atomic tasks max; a fix workorder is the smallest change that
 - Issue count before fix:
 - Issue count after fix:
 
-## Watchdog
+## Checkpoint Warnings
 
-- Stop after 30 minutes without a focused test.
+- Warn after 30 minutes without a focused test; recommend interrupt-and-split.
 - Stop when partial files exist without the affected Key Link wired.
-- Stop and split at half-context without completion.
+- Warn at half-context without completion and ask the user whether to continue
+  this worker or interrupt and split.
 
 ## Reporting
 

@@ -11,7 +11,11 @@ Run this as the main-session orchestration skill. The main session reads the AIR
 
 The core rule that keeps token spend sane: **no long-lived all-remembering orchestrator.** Everything durable lives in files (`STATE.md`, `.continue-here.md`, workorders, evidence files); the orchestrator context is a disposable working buffer. A fresh session must always be able to continue from `STATE.md` alone.
 
-- **Checkpoint, don't compact.** After pre-flight, after each integrated wave, and after each verification gate, write the durable outcome into `STATE.md`. When the main context passes ~80% of the window, or before starting a new wave with a heavy tail of tool output behind you, write `.continue-here.md` (from `assets/templates/continue-here.md`) and continue in a fresh session from it. Hitting auto-compaction means the checkpoint was late. Never rely on compaction to carry state.
+- **Checkpoint, don't hide state in compaction.** After pre-flight, each
+  integrated wave, and each verification gate, write the durable outcome into
+  `STATE.md`. Context/time/cycle thresholds produce a warning and a user choice;
+  they never automatically stop the run, interrupt a worker, or start a fresh
+  session. Write `.continue-here.md` only when the user chooses `start_fresh`.
 - **Workers always start fresh.** A worker gets its workorder file, the named AIRD doc paths, and standards refs — never the parent transcript. One workorder = one fresh worker context, one coherent commit-sized change.
 - **The orchestrator never holds raw bulk.** Full logs, screenshots, and file contents live on disk; the orchestrator holds verdicts, counts, and paths.
 
@@ -40,9 +44,10 @@ Hard requirement: `workorders/*.md`, `08-quality-gates.md`, `09-dod.md`, `STATE.
 - backend runtime profile: production dependency types/dialects, previous-release upgrade source, deployable artifact command, health/API/business-flow smoke commands.
 - first vertical slice, work class per workorder, detour counters, and worker watchdog state.
 
-## Context Budget Hard Rules
+## Context Hygiene And Checkpoint Warnings
 
-These are blocking rules:
+The hygiene rules below are mandatory, but their context/time thresholds are
+warn-only. They do not require a hook or a Codex profile.
 
 1. Batch related checks and cap recursive listings.
 2. Write long command output to logs; return exit, counts, tail, and path once.
@@ -50,7 +55,33 @@ These are blocking rules:
 4. Require worker/verifier summaries with status, paths, commands, evidence, and blockers; results over 40 lines belong in files.
 5. Read AIRD sources once and carry a one-page brief forward.
 6. Run full gates per integrated wave, not after every micro-edit.
-7. At 80 percent orchestrator context, write `STATE.md` and `.continue-here.md`, then continue fresh.
+7. At the end of every wave or verification cycle, update the monotonic session
+   counters in `STATE.md` and evaluate the warning policy below.
+
+Surface a checkpoint warning when any signal is reached:
+
+- observed or reliably estimated main context is at least 60 percent;
+- session elapsed time reaches 45 minutes, then each additional 30 minutes;
+- two AIRD workflow cycles or two completed workorders have elapsed
+  since the user's last checkpoint choice;
+- a worker has spent 30 minutes without a focused test.
+
+If context usage is not observable, record `context_measurement: unavailable`
+and use the monotonic time/cycle/workorder signals. Auto-compaction never resets
+those counters. Do not create a budgeted goal solely for this policy; if the
+user explicitly created one, remaining goal budget may be reported as another
+warning signal.
+
+At a warning, finish only the current safe atomic integration step, update
+`STATE.md`, and ask the user to choose:
+
+- `continue_current`: stay in this chat; reset only the since-choice counters
+  and warn again at the next bucket;
+- `start_fresh`: write `.continue-here.md`, summarize the handoff, and let the
+  user start or resume the fresh chat.
+
+Never choose on the user's behalf. A context/time warning is advisory and must
+not change readiness, release evidence, or workorder status by itself.
 
 For small or low-risk diffs, choose the narrowest gate set allowed by `08-quality-gates.md` and `references/verification-gates.md`: targeted tests plus one focused reviewer/QA pass at batch end. Narrowing may reduce scope, but it may never replace a required production-dialect/runtime, migration-upgrade, deployable-artifact, or API/business-flow gate with unit tests or static review. Do not run browser/usability/security/docs gates unless the change type or AIRD gates require them.
 
@@ -97,20 +128,23 @@ write sets and update `STATE.md` before execution.
 - Workers report changed files, tests run, contract deviations, and blockers.
 - No empty or vacuous results. A worker or verification agent must never return blank or a bare acknowledgment. If it cannot access what it needs or cannot reach a verdict, it returns an explicit blocker; an empty result is a blocking failure, not a pass. A `reviewer`/`qa` gate that cannot read files or reach a verdict returns a blocking REVISE with the reason, never an implicit pass.
 
-## Worker Watchdog
+## Worker Health Warnings
 
-The orchestrator owns wall-clock and context enforcement; do not rely on the
-worker to notice its own overrun. Record worker start and checkpoint state in
-`STATE.md`.
+The orchestrator records wall-clock and context signals; do not rely on the
+worker to notice its own degradation. These signals are warn-only unless they
+expose a separate hard sizing, safety, or contract failure.
 
-- If no focused test has run within 30 minutes, interrupt the worker, preserve
-  its diff, mark `sizing failure`, and split the workorder.
+- If no focused test has run within 30 minutes, preserve the current diff and
+  warn the user that interrupt-and-split is recommended. Do not interrupt only
+  because the timer fired.
 - If several partial files exist but no declared product Key Link is wired,
-  stop immediately as a sizing failure.
+  classify it as a sizing failure and stop that workorder; this is a structural
+  failure, not a context warning.
 - If the worker reaches about 50 percent of its context without completing the
-  workorder, stop and split before compaction.
-- After a watchdog stop, do not continue the same workorder or issue unlimited
-  follow-ups. Create smaller sequenced workorders and use fresh workers.
+  workorder, warn that a split/fresh worker is recommended and ask the user
+  whether to continue the current worker or interrupt and split.
+- A user choice to continue authorizes one more bounded worker cycle; surface a
+  new warning before another follow-up. Never issue unlimited follow-ups.
 
 ## Execution Phase
 
@@ -173,7 +207,7 @@ Use `$code-review-standards` with a hard context cap:
 
 Per worker, pass: one workorder path; named AIRD doc paths; selected standards
 refs; work class and vertical slice; locked decisions/risk gates; allowed scope;
-the first focused test; and the Worker Watchdog stop conditions. Require direct
+the first focused test; and the Worker Health Warning signals. Require direct
 edits, targeted tests, wired Key Link evidence, and a summary with pointers.
 Keep prompts compact.
 
@@ -184,8 +218,9 @@ escaped allowed scope; update AIRD deviations; mark workorders `done`; and
 update `STATE.md` readiness, product file count, first-slice state, supporting
 WIP/share, cycles/minutes without user value, blockers, and next action. Create
 scoped follow-up workorders only inside the sizing and detour rules. This is a
-checkpoint; if context is past ~80%, write `.continue-here.md` and continue
-fresh before verification.
+checkpoint. Evaluate the warn-only policy; if it fires, ask the user whether to
+continue in this chat or write `.continue-here.md` and start fresh before
+verification.
 
 ### Review Scheduling Policy
 
@@ -274,7 +309,10 @@ Bound the whole loop: at most 3 full verification cycles per delivery run. New b
 
 Do not mark delivery complete while reviewer, QA, browser, or usability gates have blocking findings.
 
-On pause, blockage, or a context checkpoint, write `.continue-here.md` from `assets/templates/continue-here.md` with exact next action, completed work, blockers, and required reading.
+On pause or blockage, write `.continue-here.md` from
+`assets/templates/continue-here.md`. For a context/time warning, write it only
+after the user chooses `start_fresh`; `continue_current` keeps the existing chat
+and records the choice in `STATE.md`.
 
 ## Completion Criteria
 

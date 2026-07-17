@@ -411,6 +411,19 @@ const supportingPercent = stateNumber('supporting_delivery_percent')
 const cyclesWithoutValue = stateNumber('cycles_without_user_value')
 const minutesWithoutValue = stateNumber('minutes_without_user_value')
 const detourApproved = stateBoolean('user_approved_overrun')
+const checkpointMode = stateScalar('checkpoint_mode')
+const contextMeasurement = stateScalar('context_measurement')
+const contextUsedPercent = stateNumber('context_used_percent')
+const sessionElapsedMinutes = stateNumber('session_elapsed_minutes')
+const airdCyclesSinceChoice = stateNumber('aird_cycles_since_user_choice')
+const workordersSinceChoice = stateNumber('workorders_completed_since_user_choice')
+const lastWarningElapsedMinutes = stateNumber('last_warning_elapsed_minutes')
+const lastWarningContextPercent = stateNumber('last_warning_context_percent')
+const workerMinutesWithoutTest = stateNumber('worker_minutes_without_focused_test')
+const firstFocusedTestAt = stateScalar('first_focused_test_at')
+const checkpointWarningActive = stateBoolean('checkpoint_warning_active')
+const checkpointRecommendation = stateScalar('checkpoint_recommendation')
+const userCheckpointDecision = stateScalar('user_checkpoint_decision')
 
 if (strict) {
   if (stateVersion !== '2.0') errors.push('STATE requires aird_state_version 2.0 in strict V3 mode')
@@ -461,6 +474,58 @@ if (strict) {
   }
   if ((supportingUsed > 1 || supportingPercent > 20) && detourApproved !== true) {
     errors.push('supporting detour exceeded one workorder or 20 percent without user approval')
+  }
+
+  if (checkpointMode === undefined) {
+    warnings.push('STATE lacks warn-only session checkpoint telemetry')
+  } else {
+    if (checkpointMode !== 'warn_only') errors.push(`STATE invalid checkpoint_mode ${checkpointMode}`)
+    if (!['unavailable', 'observed', 'estimated'].includes(contextMeasurement)) {
+      errors.push(`STATE invalid context_measurement ${contextMeasurement}`)
+    }
+    for (const [name, value] of [
+      ['context_used_percent', contextUsedPercent],
+      ['session_elapsed_minutes', sessionElapsedMinutes],
+      ['aird_cycles_since_user_choice', airdCyclesSinceChoice],
+      ['workorders_completed_since_user_choice', workordersSinceChoice],
+      ['last_warning_elapsed_minutes', lastWarningElapsedMinutes],
+      ['last_warning_context_percent', lastWarningContextPercent],
+      ['worker_minutes_without_focused_test', workerMinutesWithoutTest],
+    ]) {
+      if (!Number.isInteger(value) || value < 0) errors.push(`STATE ${name} must be a non-negative integer`)
+    }
+    if (contextUsedPercent > 100 || lastWarningContextPercent > 100) {
+      errors.push('STATE context percentages must be between 0 and 100')
+    }
+    if (![true, false].includes(checkpointWarningActive)) {
+      errors.push('STATE checkpoint_warning_active must be true or false')
+    }
+    if (!['none', 'continue_current', 'start_fresh'].includes(checkpointRecommendation)) {
+      errors.push(`STATE invalid checkpoint_recommendation ${checkpointRecommendation}`)
+    }
+    if (!['not_requested', 'continue_current', 'start_fresh'].includes(userCheckpointDecision)) {
+      errors.push(`STATE invalid user_checkpoint_decision ${userCheckpointDecision}`)
+    }
+
+    const checkpointReasons = []
+    if (['observed', 'estimated'].includes(contextMeasurement) &&
+        contextUsedPercent >= 60 && contextUsedPercent - lastWarningContextPercent >= 10) {
+      checkpointReasons.push(`context ${contextUsedPercent}%`)
+    }
+    if (sessionElapsedMinutes >= 45 && sessionElapsedMinutes - lastWarningElapsedMinutes >= 30) {
+      checkpointReasons.push(`session ${sessionElapsedMinutes} minutes`)
+    }
+    if (airdCyclesSinceChoice >= 2) checkpointReasons.push(`${airdCyclesSinceChoice} AIRD cycles`)
+    if (workordersSinceChoice >= 2) checkpointReasons.push(`${workordersSinceChoice} completed workorders`)
+    if (workerMinutesWithoutTest >= 30 && !firstFocusedTestAt) {
+      checkpointReasons.push(`${workerMinutesWithoutTest} worker minutes without focused test`)
+    }
+    if (checkpointReasons.length && checkpointWarningActive !== true) {
+      warnings.push(`STATE checkpoint warning due: ${checkpointReasons.join(', ')}`)
+    }
+    if (checkpointWarningActive === true && userCheckpointDecision === 'not_requested') {
+      warnings.push('STATE checkpoint warning awaits user choice: continue_current or start_fresh')
+    }
   }
 }
 

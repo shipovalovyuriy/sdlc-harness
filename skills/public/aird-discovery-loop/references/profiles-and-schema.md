@@ -9,6 +9,7 @@ references.
 - Discovery Profiles
 - Readiness Contract
 - Product-First And Detour Contract
+- Session Checkpoint Warning Contract
 - Workorder Frontmatter V3
 - Lint And Review Ordering
 
@@ -79,6 +80,28 @@ Before the first vertical slice is `functional`:
 
 Record approvals and value-flow counters in `STATE.md`. Documentation, tooling,
 and evidence-file changes do not count as product files or user value.
+
+## Session Checkpoint Warning Contract
+
+Context, elapsed-time, cycle, and no-focused-test thresholds are warn-only.
+They do not change readiness, stop a worker, or create a fresh chat by
+themselves. Hooks and Codex profiles are not required by this contract.
+
+Track monotonic elapsed minutes plus AIRD workflow cycles and completed workorders
+since the user's last checkpoint choice. Track context percentage only when it
+is observable or can be reliably estimated; otherwise record `unavailable`.
+Auto-compaction does not reset the monotonic counters.
+
+Warn at 60 percent context, 45 session minutes (then every additional 30), two
+AIRD workflow cycles, two completed workorders, or 30 worker minutes without a
+focused test. Finish the current safe atomic step and offer exactly two choices:
+
+- `continue_current`: remain in the chat and authorize one more bounded cycle;
+- `start_fresh`: write `.continue-here.md` and let the user open/resume a fresh
+  chat.
+
+Never choose for the user. Structural sizing, safety, readiness, and release
+gates remain blocking and are not downgraded by this warning policy.
 
 ## Workorder Frontmatter V3
 

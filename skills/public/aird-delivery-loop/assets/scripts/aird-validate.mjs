@@ -8,7 +8,8 @@
 //   node aird-validate.mjs <package-dir> --json      # machine-readable only
 //   node aird-validate.mjs <package-dir> --strict    # warnings also fail (exit 1)
 //
-// Exit code: 0 = pass (errors == 0), 1 = fail. With --strict, warnings also fail.
+// Exit code: 0 = pass (errors == 0), 1 = fail. With --strict, validation
+// warnings also fail; warn-only session checkpoint advisories never fail.
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -53,8 +54,10 @@ const RELEASE_GATED = ['ready_for_release', 'complete'];
 
 const errors = [];
 const warnings = [];
+const advisories = [];
 const err = (m) => errors.push(m);
 const warn = (m) => warnings.push(m);
+const advise = (m) => advisories.push(m);
 
 function fail(msg) {
   const out = { ok: false, errors: [msg], warnings: [] };
@@ -201,6 +204,65 @@ if (stateV2) {
   if ((fm.supporting_workorders_used > 1 || fm.supporting_delivery_percent > 20) &&
       fm.user_approved_overrun !== true) {
     err('supporting detour exceeded one workorder or 20 percent without user approval');
+  }
+
+  if (fm.checkpoint_mode === undefined) {
+    warn('STATE.md lacks warn-only session checkpoint telemetry');
+  } else {
+    if (fm.checkpoint_mode !== 'warn_only') err(`invalid checkpoint_mode \`${fm.checkpoint_mode}\``);
+    if (!['unavailable', 'observed', 'estimated'].includes(String(fm.context_measurement))) {
+      err(`invalid context_measurement \`${fm.context_measurement}\``);
+    }
+    const checkpointNumericFields = [
+      'context_used_percent',
+      'session_elapsed_minutes',
+      'aird_cycles_since_user_choice',
+      'workorders_completed_since_user_choice',
+      'last_warning_elapsed_minutes',
+      'last_warning_context_percent',
+      'worker_minutes_without_focused_test',
+    ];
+    for (const field of checkpointNumericFields) {
+      if (!Number.isInteger(fm[field]) || fm[field] < 0) err(`${field} must be a non-negative integer`);
+    }
+    if (fm.context_used_percent > 100 || fm.last_warning_context_percent > 100) {
+      err('context percentages must be between 0 and 100');
+    }
+    if (typeof fm.checkpoint_warning_active !== 'boolean') {
+      err('checkpoint_warning_active must be true or false');
+    }
+    if (!['none', 'continue_current', 'start_fresh'].includes(String(fm.checkpoint_recommendation))) {
+      err(`invalid checkpoint_recommendation \`${fm.checkpoint_recommendation}\``);
+    }
+    if (!['not_requested', 'continue_current', 'start_fresh'].includes(String(fm.user_checkpoint_decision))) {
+      err(`invalid user_checkpoint_decision \`${fm.user_checkpoint_decision}\``);
+    }
+
+    const checkpointReasons = [];
+    if (['observed', 'estimated'].includes(fm.context_measurement) &&
+        fm.context_used_percent >= 60 &&
+        fm.context_used_percent - fm.last_warning_context_percent >= 10) {
+      checkpointReasons.push(`context ${fm.context_used_percent}%`);
+    }
+    if (fm.session_elapsed_minutes >= 45 &&
+        fm.session_elapsed_minutes - fm.last_warning_elapsed_minutes >= 30) {
+      checkpointReasons.push(`session ${fm.session_elapsed_minutes} minutes`);
+    }
+    if (fm.aird_cycles_since_user_choice >= 2) {
+      checkpointReasons.push(`${fm.aird_cycles_since_user_choice} AIRD cycles`);
+    }
+    if (fm.workorders_completed_since_user_choice >= 2) {
+      checkpointReasons.push(`${fm.workorders_completed_since_user_choice} completed workorders`);
+    }
+    if (fm.worker_minutes_without_focused_test >= 30 && !fm.first_focused_test_at) {
+      checkpointReasons.push(`${fm.worker_minutes_without_focused_test} worker minutes without focused test`);
+    }
+    if (checkpointReasons.length && fm.checkpoint_warning_active !== true) {
+      advise(`checkpoint warning due: ${checkpointReasons.join(', ')}`);
+    }
+    if (fm.checkpoint_warning_active === true && fm.user_checkpoint_decision === 'not_requested') {
+      advise('checkpoint warning awaits user choice: continue_current or start_fresh');
+    }
   }
 }
 
@@ -450,6 +512,7 @@ const result = {
   },
   errors,
   warnings,
+  advisories,
 };
 
 if (jsonOnly) {
@@ -459,6 +522,7 @@ if (jsonOnly) {
   console.log(`  status: ${status ?? '(none)'} | artifacts tracked: ${rows.length} | workorders: ${workorderFiles.length}`);
   for (const e of errors) console.log(`  ERROR  ${e}`);
   for (const w of warnings) console.log(`  WARN   ${w}`);
+  for (const advisory of advisories) console.log(`  WARN   ${advisory} (advisory)`);
   console.log(ok ? 'PASS' : 'FAIL');
 }
 

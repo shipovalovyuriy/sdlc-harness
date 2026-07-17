@@ -122,15 +122,18 @@ The number of scenarios below must equal `acceptance_scenario_count`.
 - Runtime/browser evidence required before release:
 - Verification levels: exists / substantive / wired / functional
 
-## Watchdog
+## Checkpoint Warnings
 
-- First focused test must run within 30 minutes of worker start.
+- Warn after 30 minutes without a focused test; recommend interrupt-and-split,
+  but do not interrupt for time alone.
 - Multiple partial files without a wired Key Link are a sizing failure.
-- At 50 percent context without completion, stop and request a split.
-- After watchdog STOP, do not continue the same workorder without splitting it.
+- At 50 percent observed context without completion, warn that a split/fresh
+  worker is recommended.
+- Ask the user to choose `continue_current` or `start_fresh`; do not choose for
+  them. A continuation permits one more bounded cycle before warning again.
 
 ## Reporting
 
 Report status, product and supporting files changed, focused test command and
-result, wired Key Links, context/watchdog state, deviations, and blockers.
+result, wired Key Links, context/checkpoint warning state, deviations, and blockers.
 Never return empty or a bare acknowledgment.

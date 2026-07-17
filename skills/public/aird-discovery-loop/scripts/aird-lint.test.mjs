@@ -24,6 +24,18 @@ function stateText({
   supportingUsed = 0,
   supportingPercent = 0,
   detourApproved = false,
+  contextMeasurement = 'unavailable',
+  contextPercent = 0,
+  sessionMinutes = 0,
+  airdCycles = 0,
+  completedSinceChoice = 0,
+  lastWarningMinutes = 0,
+  lastWarningContext = 0,
+  workerMinutesWithoutTest = 0,
+  focusedTestAt = '',
+  warningActive = false,
+  recommendation = 'none',
+  checkpointDecision = 'not_requested',
   total = 1,
   ready = 1,
   inProgress = 0,
@@ -55,6 +67,20 @@ value_flow:
   minutes_without_user_value: 0
 detour_budget:
   user_approved_overrun: ${detourApproved}
+watchdog:
+  checkpoint_mode: warn_only
+  first_focused_test_at: '${focusedTestAt}'
+  worker_minutes_without_focused_test: ${workerMinutesWithoutTest}
+  context_measurement: ${contextMeasurement}
+  context_used_percent: ${contextPercent}
+  session_elapsed_minutes: ${sessionMinutes}
+  aird_cycles_since_user_choice: ${airdCycles}
+  workorders_completed_since_user_choice: ${completedSinceChoice}
+  last_warning_elapsed_minutes: ${lastWarningMinutes}
+  last_warning_context_percent: ${lastWarningContext}
+  checkpoint_warning_active: ${warningActive}
+  checkpoint_recommendation: ${recommendation}
+  user_checkpoint_decision: ${checkpointDecision}
 ---
 `;
 }
@@ -248,7 +274,16 @@ try {
     'requires explicit user approval',
   );
 
-  console.log('aird-lint tests: PASS (9 cases)');
+  assertCase(
+    'checkpoint thresholds warn without blocking',
+    run(makePackage('checkpoint-warning', {
+      state: { contextMeasurement: 'observed', contextPercent: 65, sessionMinutes: 45, airdCycles: 2 },
+    })),
+    0,
+    'checkpoint warning due',
+  );
+
+  console.log('aird-lint tests: PASS (10 cases)');
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

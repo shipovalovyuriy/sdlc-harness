@@ -10,8 +10,11 @@ description: "Explicit ARiD/AIRD discovery loop for turning a non-trivial featur
 Run this as the main-session orchestrator. Durable decisions live in the package;
 a fresh session must resume from `STATE.md` and `00-discussion-log.md`.
 
-- Checkpoint every phase; at 80 percent context write `STATE.md` and
-  `.continue-here.md`, then continue fresh.
+- Checkpoint every phase. At 60 percent observed context, 45 minutes in the
+  session, or two phases/cycles since the user's last checkpoint choice, update
+  `STATE.md` and show a warn-only checkpoint. Do not stop automatically or
+  choose a fresh session for the user. Offer `continue_current` and
+  `start_fresh`; write `.continue-here.md` only if the user chooses fresh.
 - Let scoped discovery agents write artifacts and return verdicts plus paths,
   never transcripts or bulk output.
 - Keep runtime probing and raw logs inside scoped explorer contexts.

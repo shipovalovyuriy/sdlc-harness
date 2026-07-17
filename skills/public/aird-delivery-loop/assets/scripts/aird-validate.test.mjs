@@ -35,6 +35,18 @@ function stateV2({
   supportingUsed = 0,
   supportingPercent = 0,
   detourApproved = false,
+  contextMeasurement = 'unavailable',
+  contextPercent = 0,
+  sessionMinutes = 0,
+  airdCycles = 0,
+  completedSinceChoice = 0,
+  lastWarningMinutes = 0,
+  lastWarningContext = 0,
+  workerMinutesWithoutTest = 0,
+  focusedTestAt = '',
+  warningActive = false,
+  recommendation = 'none',
+  checkpointDecision = 'not_requested',
 } = {}) {
   return `---
 aird_state_version: '2.0'
@@ -45,6 +57,9 @@ readiness:
   ready_for_implementation: ${implementation}
   ready_for_runtime_verification: ${runtime}
   ready_for_release: ${release}
+progress:
+  artifacts_total: ${baseline.length}
+  workorders_total: 3
 value_flow:
   product_implementation_started: ${productStarted}
   product_files_changed: ${productFiles}
@@ -56,11 +71,31 @@ value_flow:
   minutes_without_user_value: 0
 detour_budget:
   user_approved_overrun: ${detourApproved}
+watchdog:
+  checkpoint_mode: warn_only
+  first_focused_test_at: '${focusedTestAt}'
+  worker_minutes_without_focused_test: ${workerMinutesWithoutTest}
+  context_measurement: ${contextMeasurement}
+  context_used_percent: ${contextPercent}
+  session_elapsed_minutes: ${sessionMinutes}
+  aird_cycles_since_user_choice: ${airdCycles}
+  workorders_completed_since_user_choice: ${completedSinceChoice}
+  last_warning_elapsed_minutes: ${lastWarningMinutes}
+  last_warning_context_percent: ${lastWarningContext}
+  checkpoint_warning_active: ${warningActive}
+  checkpoint_recommendation: ${recommendation}
+  user_checkpoint_decision: ${checkpointDecision}
 ---
 
 ## Blockers
 
 - None.
+
+## Artifact Progress
+
+| Artifact | Status | Notes |
+|---|---|---|
+${baseline.map((file) => `| ${file} | done | |`).join('\n')}
 `;
 }
 
@@ -217,20 +252,26 @@ artifact_smoke_evidence: evidence/artifact.log
 ---
 `;
 
-function run(dir) {
-  const result = spawnSync(process.execPath, [validator, dir, '--json'], { encoding: 'utf8' });
+function run(dir, { strict = false } = {}) {
+  const args = [validator, dir, '--json'];
+  if (strict) args.push('--strict');
+  const result = spawnSync(process.execPath, args, { encoding: 'utf8' });
   let parsed = null;
   try { parsed = JSON.parse(result.stdout); } catch { /* asserted below */ }
   return { code: result.status, parsed, stdout: result.stdout, stderr: result.stderr };
 }
 
-function assertCase(name, result, expectedCode, expectedError = null) {
+function assertCase(name, result, expectedCode, expectedError = null, expectedWarning = null) {
   if (result.code !== expectedCode) {
     throw new Error(`${name}: exit ${result.code}, expected ${expectedCode}\n${result.stdout}\n${result.stderr}`);
   }
   if (!result.parsed) throw new Error(`${name}: validator did not return JSON`);
   if (expectedError && !result.parsed.errors.some((error) => error.includes(expectedError))) {
     throw new Error(`${name}: missing error containing ${JSON.stringify(expectedError)}\n${result.stdout}`);
+  }
+  const nonBlockingWarnings = [...result.parsed.warnings, ...(result.parsed.advisories || [])];
+  if (expectedWarning && !nonBlockingWarnings.some((warning) => warning.includes(expectedWarning))) {
+    throw new Error(`${name}: missing warning containing ${JSON.stringify(expectedWarning)}\n${result.stdout}`);
   }
 }
 
@@ -359,7 +400,23 @@ try {
     'docs_to_read omits 02-ui-prototype.md',
   );
 
-  console.log('aird-validate tests: PASS (15 cases)');
+  assertCase(
+    'checkpoint thresholds stay advisory even in strict mode',
+    run(makePackage('warn-only-checkpoint', {
+      state: stateV2({
+        status: 'in_delivery',
+        contextMeasurement: 'observed',
+        contextPercent: 65,
+        sessionMinutes: 45,
+        airdCycles: 2,
+      }),
+    }), { strict: true }),
+    0,
+    null,
+    'checkpoint warning due',
+  );
+
+  console.log('aird-validate tests: PASS (16 cases)');
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

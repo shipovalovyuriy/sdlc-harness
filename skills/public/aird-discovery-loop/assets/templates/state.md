@@ -45,11 +45,36 @@ detour_budget:
   supporting_delivery_percent_limit: 20
   user_approved_overrun: false
 watchdog:
+  # warn_only; context/time warnings never auto-stop or auto-start a chat.
+  checkpoint_mode: warn_only
   active_workorder: none
   worker_started_at: ''
   first_focused_test_at: ''
+  worker_minutes_without_focused_test: 0
   public_flow_wired: false
+  # unavailable | observed | estimated
+  context_measurement: unavailable
   context_used_percent: 0
+  session_started_at: ''
+  session_elapsed_minutes: 0
+  aird_cycles_since_user_choice: 0
+  workorders_completed_since_user_choice: 0
+  last_warning_elapsed_minutes: 0
+  last_warning_context_percent: 0
+  checkpoint_warning_active: false
+  checkpoint_warning_reasons: []
+  # none | continue_current | start_fresh
+  checkpoint_recommendation: none
+  # not_requested | continue_current | start_fresh
+  user_checkpoint_decision: not_requested
+  user_checkpoint_decided_at: ''
+warning_policy:
+  context_warn_percent: 60
+  session_warn_minutes: 45
+  repeat_elapsed_minutes: 30
+  repeat_context_percent: 10
+  aird_cycles_warn: 2
+  completed_workorders_warn: 2
 quality:
   documentation_depth: pending
   medium_high_risks_have_gates: pending
@@ -109,18 +134,35 @@ supporting work.
 If either detour limit is exceeded without approval, set `status: paused` and do
 not spawn more supporting work.
 
-## Worker Watchdog
+## Checkpoint Warnings
 
+- Mode: warn_only
 - Active workorder:
 - Worker start time:
 - First focused test time:
+- Worker minutes without focused test:
 - Public flow wired: yes / no, with Key Link evidence
-- Context used percent:
-- Watchdog verdict: continue / stop-and-split
+- Context measurement: unavailable / observed / estimated
+- Context used percent, when observable:
+- Session elapsed minutes:
+- AIRD workflow cycles since user's last checkpoint choice:
+- Workorders completed since user's last checkpoint choice:
+- Warning active: yes / no
+- Warning reasons:
+- Recommendation: continue_current / start_fresh
+- User decision: not_requested / continue_current / start_fresh
+- User decision time:
 
-Stop and split when no focused test exists after 30 minutes, several partial
-files exist without a wired public flow, or half the worker context is consumed
-without a complete workorder.
+Warn at 60 percent observed/estimated context, 45 elapsed minutes (then every
+additional 30), two AIRD workflow cycles, two completed workorders, or 30 worker
+minutes without a focused test. If context is unavailable, use the monotonic
+time/cycle/workorder signals. Auto-compaction does not reset them.
+
+A warning never interrupts work or starts a new chat automatically. Finish the
+current safe atomic step and ask the user. On `continue_current`, reset the
+since-choice counters and record the warning buckets; on `start_fresh`, write
+`.continue-here.md` and let the user open or resume the new chat. Multiple
+partial files without a wired Key Link remain a separate sizing failure.
 
 ## Artifact Progress
 
