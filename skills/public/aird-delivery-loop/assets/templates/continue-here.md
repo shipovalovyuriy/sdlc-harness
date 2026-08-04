@@ -1,5 +1,5 @@
 ---
-status: paused
+checkpoint_kind: routine
 last_updated: ''
 ---
 
@@ -12,8 +12,8 @@ last_updated: ''
 - Active workorder:
 - Current wave (done / in progress / remaining):
 - Current gate:
-- Delivery brief (inline or path — a fresh session continues from this, not from re-reading the package):
-- Checkpoint warning that led to `start_fresh`:
+- Delivery brief (inline or path — the next worker continues from this, not from re-reading the package):
+- Hard-stop reason (`none` for a routine checkpoint):
 - User decision pointer:
 
 ## Completed Work

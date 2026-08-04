@@ -10,6 +10,22 @@ Create this during discovery for UI work before final TRD/workorders.
 - Owner agent:
 - Last reviewed:
 
+## Design Provenance And Fidelity
+
+- Approved design source used:
+- Current application screenshots used:
+- Shell/navigation source:
+- Design-system/token source:
+- Prototype host choice and rationale:
+
+| Prototype element | Reused application component/token/pattern | Exact source | Fidelity status (match/gap/accepted deviation) |
+|---|---|---|---|
+
+### Fidelity Gaps
+
+| Gap | Why unavoidable | User status (accepted/unconfirmed) | Delivery requirement |
+|---|---|---|---|
+
 ## Goal
 
 - Business question:
@@ -39,6 +55,8 @@ Create this during discovery for UI work before final TRD/workorders.
 - Run command:
 - Preview URL:
 - Browser checks:
+- Desktop screenshot comparison:
+- Mobile screenshot comparison:
 
 ## User Review
 
@@ -57,6 +75,9 @@ Create this during discovery for UI work before final TRD/workorders.
 ## Changes Required Before Delivery
 
 - 
+
+Do not mark the prototype `accepted` while a material application/design-system
+mismatch is unexplained or an intentional deviation is still unconfirmed.
 
 ## Delivery Handoff
 

@@ -13,7 +13,7 @@ Explicit invocation counts as a request for delegation and parallel agent work. 
 
 - Preserve behavior by default.
 - Prefer small, high-confidence improvements over broad rewrites.
-- Use `$code-review-standards`: always load `universal.md` and `structure-reuse-performance.md`; add stack-specific refs.
+- Use `$code-review-standards`: load only the specific reference files needed — always `references/universal.md` and `references/structure-reuse-performance.md`, plus stack-specific refs. Do not load the full skill or unrelated refs. Workers usually do not need standards at all — the workorder should already state what to change and how.
 - Respect dirty worktrees. Never overwrite unrelated user changes. If unrelated changes touch the same files, inspect and work with them or stop with a blocker.
 - Do not commit unless the user requested commit/autocommit or confirms commit mode.
 - Use `supervisor` when more than 3 parallel workstreams are needed. Otherwise the main session coordinates.
@@ -27,7 +27,7 @@ Write loop artifacts under:
 .agent/improve-my-code/<run-slug>/
 ```
 
-Use `assets/run-state.md`, `assets/improvement-candidate.md`, and `assets/fix-workorder.md` when useful.
+`run-state.md` (from `assets/run-state.md`) is required for every run. Use `assets/improvement-candidate.md` and `assets/fix-workorder.md` when useful. Update `run-state.md` incrementally — edit the changed sections, do not regenerate the whole file.
 
 ## Loop
 
@@ -53,9 +53,9 @@ Use batch limits unless the user gives a tighter scope:
 
 ### 2. Scan
 
-Run one or more scoped `explorer` agents first unless the user supplied exact files and exact improvements. Split by bounded areas: frontend, backend, data, tests, build/tooling, security-sensitive code.
+Run a single scoped `explorer` agent by default, unless the user supplied exact files and exact improvements (then skip the scan). Split into multiple scan agents only when the user explicitly asked for broad coverage or the repo is genuinely large — and never more than 3, with disjoint areas (e.g. frontend / backend+data / tests+tooling). Scanning is the most expensive phase and only 1-3 candidates get implemented per batch — keep it proportional.
 
-Each scan agent must use `$code-review-standards` in Reviewer Mode and return improvement candidates, not patches:
+Each scan agent must use `$code-review-standards` in Reviewer Mode and return improvement candidates, not patches. Cap output at the 10 highest-value candidates per agent; evidence is path/line plus one sentence, no code quoting. Per candidate:
 
 - issue;
 - evidence path/line;
@@ -67,7 +67,7 @@ Each scan agent must use `$code-review-standards` in Reviewer Mode and return im
 
 ### 3. Select Batch
 
-Build `improvement-backlog.md` from scan results. Select a small batch for implementation:
+Build `improvement-backlog.md` (a plain ranked list, one line per candidate) from scan results. If multiple scan agents ran, deduplicate by file/line first — overlapping areas produce duplicate candidates. Select a small batch for implementation:
 
 - prefer P1/P2 correctness, maintainability, duplication, structure, test, and low-risk performance improvements;
 - skip style-only issues handled by formatter/linter;
@@ -91,11 +91,11 @@ Create one `workorders/*.md` per independent improvement. Assign:
 Pass each worker:
 
 - one workorder;
-- selected `$code-review-standards` refs;
+- specific `$code-review-standards` ref files only if the workorder genuinely needs them (usually it does not);
 - allowed read/write paths;
 - behavior-preservation requirement;
 - required verification commands;
-- instruction to edit directly and report changed files, reuse decisions, and blockers.
+- instruction to edit directly and report back briefly: changed files, reuse decisions, and blockers — no diff dumps or long narratives.
 
 ### 5. Integrate
 
@@ -111,11 +111,11 @@ After workers finish:
 
 Run verification after integration:
 
-- formatter/lint/typecheck/build/tests relevant to touched code;
+- formatter/lint/typecheck/build/tests relevant to touched code — always;
 - focused tests for changed behavior;
-- `reviewer` with `$code-review-standards` loaded;
-- `qa` and browser verification for user-facing frontend changes;
-- `cybersec` review for security-sensitive changes.
+- `reviewer` (with the same standards refs) only for batches with real risk: logic changes, shared/core code, or anything with non-trivial behavior-preservation risk. Skip it for mechanical, localized refactors already covered by lint/typecheck/tests;
+- `qa` and browser verification only for user-facing frontend changes;
+- `cybersec` review only for security-sensitive changes.
 
 Treat missing evidence as blocked, not passed. Record commands, exit status, and evidence in `verification.md`.
 
@@ -126,9 +126,9 @@ For each blocking finding:
 1. Create a scoped fix workorder.
 2. Assign the smallest appropriate worker.
 3. Re-run focused checks.
-4. Re-run reviewer/QA gates affected by the fix.
+4. Re-run only the gate that raised the finding — not the full gate set.
 
-Run at most 3 verification cycles. If blockers remain after cycle 3, stop with remaining findings and recommended next step.
+A verification cycle = one integration pass plus its gates (step 6 is cycle 1). Run at most 3 cycles. If blockers remain after cycle 3, stop with remaining findings and recommended next step.
 
 ### 8. Commit Gate
 

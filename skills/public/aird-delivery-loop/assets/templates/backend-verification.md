@@ -1,5 +1,6 @@
 ---
 result: pending
+blocked_reason: none
 required_checks: 0
 passed_checks: 0
 failed_checks: 0
@@ -70,7 +71,4 @@ Final fail-closed runtime evidence for backend/API/data/migration/deployable-ser
 
 ## Waivers
 
-Required-gate waivers cannot produce PASS. If the user explicitly accepts one,
-record it here, keep `ready_for_release: blocked`, and keep release `NO-GO`.
-When product code is done, `status: implementation_complete` remains valid;
-use `paused` only when no safe progress or a user decision remains.
+Required-gate waivers cannot produce PASS. If the user explicitly accepts one, record it here, set `STATE.md` to `paused`, and keep release `NO-GO`.

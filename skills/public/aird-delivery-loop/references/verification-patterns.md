@@ -23,6 +23,24 @@ Common red flags:
 - static reviewer parity or mocked UI responses used as backend runtime evidence;
 - verdicts such as `PASS with residual risk`, `evidence debt`, or `wired-but-skipped`.
 
+Proxy-probe red flags — a check that answers an easier question than the one
+that matters. Each of these has passed while the real path was broken:
+
+- a hand-written request "equivalent to what the code sends", instead of the
+  payload the real serializer actually emits;
+- a reachability or auth check (`the endpoint is up`, `the credential works`)
+  standing in for a compatibility check (`the endpoint accepts our body`);
+- a documentation example or SDK sample used as the probe body;
+- asserting a `200`/exit-0 instead of the terminal observable the feature
+  depends on — the final value, the persisted row, the usage record;
+- probing a different shape/version/mode of the API than production uses;
+- a mock, fixture, or recorded response used to close an external-contract risk;
+- "the types line up" or "the docs say it accepts this" as evidence of runtime
+  acceptance.
+
+The test: if the probe would still pass after deleting the production code path
+it is supposed to validate, it proves nothing about that path.
+
 Map verification to `must_haves`:
 
 - truths require functional evidence;

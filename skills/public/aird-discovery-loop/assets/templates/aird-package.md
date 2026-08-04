@@ -5,11 +5,12 @@ Use this template as the target artifact set under `.agent/aird/<feature-slug>/`
 ## Root Files
 
 - `STATE.md` - living status, active phase, blockers, next action.
+- `REVIEW-MANIFEST.json` - generated target-base provenance, accepted waves,
+  and accepted workorder hashes. Never hand-edit readiness mirrors elsewhere.
 - `.continue-here.md` - transient resume note when paused or blocked.
 - `codemap.md` - hierarchical map of the change-relevant code; agents work from it (non-trivial changes).
 - `codebase/` - optional deeper current-state map for broad or unfamiliar codebases.
 - `prototype/` - optional UI mock stand for user-facing work.
-- `10-backend-verification.md` - delivery runtime evidence for backend/runtime changes.
 - `10-ui-verification.md` - delivery browser/usability evidence for user-facing changes.
 
 Optional codebase map:
@@ -105,10 +106,33 @@ Optional codebase map:
 
 ## 03-risk-register.md
 
+Opens with the machine-read existential contract. List every assumption that is
+outside your control, shape-changing if false, and cheaply falsifiable — and
+probe it in phase 3.5 before any design document exists.
+
+```yaml
+---
+existential_risks:
+  - id: R-01
+    claim: <the external fact the design depends on>
+    claim_locked_at: ''       # set before the probe runs; never edited afterwards
+    real_boundaries: []       # boundaries the probe actually drove
+    faked_boundaries: []      # anything substituted; [] asserts nothing was
+    status: unproven          # unproven | proven | refuted
+    probe: evidence/r-01-<slug>.log
+---
+```
+
+The claim is fixed before the probe runs; afterwards it may change only to
+`refuted`. Narrowing it to describe the part that happened to work is not
+proving it — record that as `unproven` with the proven part in `claim`. A
+`proven` risk with a non-empty `faked_boundaries` is a contradiction and is
+rejected.
+
 | Risk | Category | Severity | Confidence | Discussion decision / assumption | Mitigation | Evidence gate / cheapest test | Decision rule | Affects |
 |---|---|---:|---:|---|---|---|---|---|
 
-Every medium/high risk must name the decision, mitigation owner or workorder, and evidence gate that closes it. Leave the package unready while a medium/high risk has no closure path.
+Every medium/high risk must name the decision, mitigation owner or workorder, and evidence gate that closes it. Leave the package unready while a medium/high risk has no closure path. Keep the `Affects` column precise — it is the blast radius used for a scoped correction if the assumption is later disproved.
 
 ## 04-trd.md
 
@@ -124,6 +148,8 @@ Every medium/high risk must name the decision, mitigation owner or workorder, an
 - Failure modes and concurrency/idempotency:
 - Rollout and fallback:
 - Observability:
+- Non-functional targets (scale, latency/performance budget, cost) — required
+  for a `deep` package; write the numbers, do not reference them:
 - Compatibility:
 - Alternatives rejected:
 - Assumptions and open technical questions:
@@ -154,22 +180,18 @@ Every medium/high risk must name the decision, mitigation owner or workorder, an
 
 ## 07-implementation-plan.md
 
-- First vertical slice and public flow:
-- Product workorders required for the first slice:
-- Supporting workorders and detour budget:
-- Milestones:
-- Workorders:
-- Dependencies:
+- Value-producing waves and their outcomes:
+- Workorder IDs by wave (frontmatter remains authoritative):
+- Dependency intent (workorder frontmatter remains authoritative):
 - Integration points:
 - Rollback:
 - Order constraints:
 - Evidence each milestone must produce:
+- Progressive discovery trigger after the current implementation budget:
 
 ## 08-quality-gates.md
 
-- Implementation-readiness gates:
-- Runtime-verification-readiness gates:
-- Release-readiness gates:
+- Pre-flight gates:
 - Revision gates:
 - Escalation gates:
 - Abort gates:
@@ -191,13 +213,28 @@ Every DoD item must be covered by at least one gate; every gate must point to th
 
 ## 09-dod.md
 
-- Product implementation complete:
-- Runtime verification complete:
-- Release ready:
+Opens with the per-wave outcome contract. This is what makes the product-first
+gate about who observes the wave rather than about a self-declared `work_class`.
+The persona must be one `01-prd.md` defines.
+
+```yaml
+---
+wave_outcomes:
+  - wave: W1
+    user_observable_outcome: <what a named person can now do that they could not before>
+    persona: <persona from 01-prd.md>
+---
+```
+
+A wave whose honest outcome is an internal API or tool surface is a platform
+slice: take it to the user as one question and record
+`platform_slice_approved: true` in `STATE.md`.
+
 - Functional:
 - Technical:
 - UX:
 - Tests:
 - Observability:
 - Docs:
-- Runtime evidence blockers that do not block implementation:
+- Release:
+- Ready-for-delivery evidence:

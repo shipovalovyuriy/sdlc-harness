@@ -10,6 +10,17 @@ Ask only when the answer materially changes user-visible scope or UX, an irrever
 
 Exceed 10 questions only when the user explicitly invokes **Grill** mode or explicitly asks to continue the interview. If another critical decision cannot be safely defaulted after the cap, record it as a blocker and explain it concisely rather than continuing automatically.
 
+Two decisions are **outside** the budget and must always be asked when they
+arise, because no default is safe and the package cannot honestly claim
+readiness without an answer:
+
+- any `STATE.md` blocker with `needs_user_decision: true` — a blocker on the
+  only path to a user is a question, not a note;
+- accepting a first wave whose outcome is a platform slice rather than
+  something a PRD persona observes (`platform_slice_approved`).
+
+Both are single closed questions with a recommendation, in the normal format.
+
 ## Core rule: one decision at a time
 
 Ask ONE selected question, get the answer, and let that answer decide whether another budgeted question is still necessary. It is a short decision tree, not a form — never dump a batch or expose the unused candidate inventory. Each answer should prune branches aggressively (e.g. "no persistence" deletes every migration/backfill question that would have followed).
