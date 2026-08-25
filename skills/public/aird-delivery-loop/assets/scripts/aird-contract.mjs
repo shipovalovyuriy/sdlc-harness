@@ -141,6 +141,27 @@ export function parseStateBlockers(stateText) {
   return parseBlockList(stateText, 'blockers');
 }
 
+// Findings registered by the one final combined review. The orchestrator closes
+// its own fixes, so each entry has to carry the criterion it will be judged
+// against and a command that can actually be run -- otherwise batch closure is
+// a rubber stamp with extra steps.
+export function parseStateFindings(stateText) {
+  return parseBlockList(stateText, 'findings');
+}
+
+// Does an allowed_write_paths entry cover a concrete path? Write scopes may be
+// exact files or directory globs (`src/**`, `tests/`), so compare against the
+// glob-stripped prefix rather than by string equality.
+export function writeScopeCovers(writePaths, target) {
+  const wanted = String(target ?? '').trim().replace(/^\.\//, '');
+  if (!wanted) return true;
+  return writePaths.some((raw) => {
+    const scope = String(raw ?? '').trim().replace(/^\.\//, '').replace(/\/?\*+$/, '').replace(/\/$/, '');
+    if (!scope) return true;
+    return wanted === scope || wanted.startsWith(`${scope}/`);
+  });
+}
+
 // 09-dod.md declares, per wave, who observes what. This is what makes the
 // product-first gate about an outcome rather than a `work_class` label.
 export function parseWaveOutcomes(dodText) {

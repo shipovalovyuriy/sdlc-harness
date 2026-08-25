@@ -1,5 +1,6 @@
 ---
 checkpoint_kind: routine
+# routine | proactive_handoff | hard_stop
 last_updated: ''
 ---
 
@@ -12,6 +13,7 @@ last_updated: ''
 - Active workorder:
 - Current wave (done / in progress / remaining):
 - Current gate:
+- Root slices since handoff:
 - Delivery brief (inline or path — the next worker continues from this, not from re-reading the package):
 - Hard-stop reason (`none` for a routine checkpoint):
 - User decision pointer:

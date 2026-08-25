@@ -1,6 +1,6 @@
 ---
 name: aird-delivery-loop
-description: "Explicit ARiD/AIRD delivery loop for implementing an existing AIRD package through independent execution and verification subagents. Use only when the user explicitly invokes $aird-delivery-loop, says AIRD/ARiD delivery, or asks to execute workorders from an existing AIRD package. Runs implementation workers with $code-review-standards guidance, fail-closed backend runtime and migration-upgrade checks, tests, code review, QA, browser checks for web apps, usability checks for UX flows, and fix loops until DoD/quality gates pass. Context is disposable, disk is memory: the orchestrator stays lean, checkpoints to STATE.md, rotates fresh workers, and requests a fresh root task only at a real context boundary."
+description: "Explicit ARiD/AIRD delivery loop for implementing an existing AIRD package through lean orchestration and independent verification subagents. Use only when the user explicitly invokes $aird-delivery-loop, says AIRD/ARiD delivery, or asks to execute workorders from an existing AIRD package. The orchestrator implements sequential slices itself and starts implementation workers only on two justifications: actual parallel execution of large, dependency-ready slices with disjoint write sets, or its own context reaching 60% with substantive work left. Runs fail-closed backend runtime and migration-upgrade checks, tests, code review, QA, browser checks for web apps, usability checks for UX flows, and fix loops until DoD/quality gates pass. Context is disposable, disk is memory: checkpoint every slice and proactively hand the root task over after six slices or near 70% context."
 ---
 
 # AIRD Delivery Loop
@@ -15,25 +15,27 @@ that share one integration boundary, or one finding-group fix/closure cycle.
 After checkpointing a slice, the main session may continue automatically with
 the next dependency-compatible slice while the hard context-stop conditions
 below remain false. The wave is the acceptance/dependency unit; it is not
-permission to keep one worker context alive across multiple workorders.
+permission to spawn sequential isolated workers for its workorders.
 
 The core rule that keeps token spend sane: **no long-lived all-remembering orchestrator.** Everything durable lives in files (`STATE.md`, `REVIEW-MANIFEST.json`, `.continue-here.md`, workorders, evidence files); the orchestrator context is a disposable working buffer. A fresh session continues from `STATE.md`, the review manifest, and the selected wave—not parent chat history.
 
 - **Checkpoint, don't compact.** After pre-flight, after every execution slice,
   and after each verification gate, write the durable outcome into `STATE.md`.
   A checkpoint is a durability boundary, not automatically a user-visible
-  stop. Continue with a fresh worker after the checkpoint when the compact
-  orchestrator still has budget. At 100% of the context window, after
-  auto-compaction, or when another hard-stop condition below is true, write
+  stop. Continue with the next lean-routed executor after the checkpoint when the compact
+  orchestrator still has budget. Proactively hand over the root task after six
+  execution slices in one root session or when context reaches about 70%,
+  whichever comes first. At that planned boundary, at 100% of the context
+  window, after auto-compaction, or when another hard-stop condition below is true, write
   `.continue-here.md` (from `assets/templates/continue-here.md`) and end the
   current root task. The next task continues from disk. Never rely on
   compaction to carry state.
-- **Workers always start fresh.** A worker gets its workorder file, the named AIRD doc paths, and standards refs — never the parent transcript. One workorder = one fresh worker context, one coherent commit-sized change.
+- **Workers exist for actual parallelism, or for context headroom.** The orchestrator implements a sole ready slice directly while its own context stays under 60%. Spawn an implementation worker when another large, dependency-ready slice with a disjoint write set runs concurrently, or when the orchestrator crosses 60% with substantive work left. Never spawn for a role label or merely because a workorder is substantive. Give a justified worker the workorder file, named AIRD doc paths, and standards refs—never the parent transcript.
 - **The orchestrator never holds raw bulk.** Full logs, screenshots, and file contents live on disk; the orchestrator holds verdicts, counts, and paths.
 
-Explicit invocation of this skill counts as an explicit request for delegation and parallel agent work: its spawning instructions have priority over the general no-delegation rule in `AGENTS.md`. Do not ask the user for permission before each spawn.
+Explicit invocation counts as permission for the delegation this skill actually needs; it is not permission to spawn an agent for every edit or finding. Its lean-routing rules have priority over the general no-delegation rule in `AGENTS.md`. Do not ask before each justified spawn.
 
-Use `references/gates.md` for gate behavior, `references/revision-loop.md` for bounded defect loops, `references/verification-patterns.md` for real-implementation checks, and `references/backend-runtime-gates.md` when accepted workorder frontmatter selects backend runtime profiles. `surface` and `runtime_profiles` are authoritative; never infer gate routing from arbitrary workorder prose.
+Use `references/gates.md` for gate behavior, `references/revision-loop.md` for bounded defect loops, `references/verification-patterns.md` for real-implementation checks, `references/backend-runtime-gates.md` when accepted workorder frontmatter selects backend runtime profiles, and the discovery skill's `references/process-metrics.md` for the end-of-loop metrics and improvement phase. `surface` and `runtime_profiles` are authoritative; never infer gate routing from arbitrary workorder prose.
 
 The canonical definition of readiness fields, lifecycle statuses, workorder
 schema, product-first budget, and checkpoint semantics is
@@ -58,6 +60,30 @@ permission to normalize/re-review the whole package or reopen accepted
 product/architecture decisions. If the minimum implementation contract itself
 is vague, stop and recommend `$aird-discovery-loop`.
 
+## Language And Clarity Standard
+
+Write every human-readable AIRD specification, workorder explanation, decision
+or deviation record, status update, verification interpretation, and
+user-facing report in clear Russian. The same rule applies when Delivery edits
+Discovery artifacts. Repeat this requirement in every worker, reviewer, QA, or
+specialist prompt that can create or edit AIRD text.
+
+- Prefer ordinary Russian terms over unexplained English terminology. In prose,
+  explain concepts such as product requirements, technical design, program
+  interface, user interface, completion criteria, workorder, quality gate,
+  rollout, fallback, and checkpoint in Russian rather than relying on PRD, TRD,
+  API, UI/UX, DoD, or English labels alone.
+- Spell out and explain every necessary abbreviation or borrowed term on first
+  use. Use a short form later only when its meaning is already clear.
+- Describe results as cause and effect: what changed, why, how the system now
+  behaves, what evidence proves it, and what remains blocked. Do not substitute
+  filenames, status codes, or raw command output for an explanation.
+- Preserve exact filenames, source identifiers, schema/frontmatter keys,
+  commands, protocol names, third-party product names, and raw logs when they
+  are contract data. Explain them in Russian alongside the exact form. This
+  rule does not translate source-code identifiers or change the product's own
+  localization requirements.
+
 ## Required Inputs
 
 Read `STATE.md`, `REVIEW-MANIFEST.json`, and validator output first. Select one
@@ -72,6 +98,7 @@ workorder hash, and only for the invalidated wave.
 - selected wave, workorder order, and dependency closure;
 - locked decisions and risk gates that constrain implementation;
 - allowed paths per workorder;
+- impact-radius paths that lock or consume the changed contract (tests, snapshots, fixtures, enum/schema locks, generated expectations, and direct consumers);
 - exact gate commands (test/lint/build/deploy-check) from `08-quality-gates.md`;
 - DoD items and which gate proves each.
 - every gate's criticality: `required` or `optional`; required gates cannot be self-deferred by an agent;
@@ -86,8 +113,9 @@ These are blocking rules, not preferences. Violating them is what turns a delive
 1. **Batch checks into one compound command.** Never issue `git status`, `git diff --check`, `git diff --stat`, or an ssh health-check as separate serial calls when one compound command answers the question: `git status --short && git diff --stat && go test ./... 2>&1 | tail -30`. Every extra tool call replays the entire context.
    Cap every listing command that can explode: `| head -50` on `git ls-files --others`, `find`, `ls -R`, and any recursive listing — build caches and artifact dirs turn an innocent listing into 100K+ tokens. If a listing overflows, filter (exclude cache/artifact dirs) instead of scrolling it.
    The orchestrator's direct tool result budget is **8K tokens per call**;
-   prefer 2–4K. Never request 20K–50K output "just in case". Large source or
-   log inspection belongs in a fresh worker or an evidence file.
+   prefer 2–4K. Never request 20K–50K output "just in case". Keep source
+   inspection bounded and put full logs in an evidence file; never spawn a
+   worker solely to offload reading or log inspection.
 2. **No chunk-polling of long-running processes.** For builds, test suites, deploys, and remote scripts: redirect full output to a log file, run to completion (in the background if needed), then read the verdict once — exit code, counts, `tail -30`, and the log path. Never stream 30-second output chunks into the conversation, never poll a running process with repeated reads. If a process needs watching, a single wait-then-tail beats N polls.
    The same rule applies to agents: do not call `list_agents` repeatedly and do
    not issue 30-second status polls. Wait on the intended target; request at
@@ -95,24 +123,28 @@ These are blocking rules, not preferences. Violating them is what turns a delive
    final is delivered, never fetch the same result again through an agent
    listing.
 3. **Images never enter the orchestrator context.** Screenshots are evidence files: save to disk, record the path in `10-ui-verification.md`. Only a QA subagent (fresh context, discarded after the verdict) opens pixels. The orchestrator receives pass/fail per state plus paths.
-4. **Subagent results are summaries with pointers.** A worker or verifier
-   returns: status, changed paths, commands run with exit codes, evidence file
-   paths, blockers — not transcripts, not full logs, not file contents. The
-   normal final is at most 10 lines or 600 words, whichever is smaller. All
-   matrices, command output, and detailed findings belong in an evidence file
-   with only its path returned.
+4. **Subagent results use six fixed fields.** A worker or verifier returns
+   exactly six one-line fields, in this order: `status`, `paths`, `commands`
+   with exit codes, `numbers`, `evidence`, `blockers`. The `numbers` field
+   points to the count section in evidence instead of copying the values. No
+   tables, transcripts, logs, file contents, or seventh field are allowed.
+   Read only those first six fields; if the response overflows, do not read or
+   summarize the overflow and do not ask the agent to resend it. Detailed
+   material belongs in the referenced evidence file.
 5. **Read once, brief forward.** AIRD docs, skill references, and standards files are read once at the phase that needs them. If you notice yourself re-reading the same reference, the delivery brief is missing a line — fix the brief, don't re-read.
 6. **Verify per wave, not per twitch.** Gate commands run once after a wave
-   integrates (plus targeted tests a worker runs on its own diff). Re-running
+   integrates (plus targeted tests the slice implementer runs on its own diff). Re-running
    the full gate set after every micro-fix is the second-biggest token sink
    after polling. The validator runs at pre-flight, after an accepted-contract
    or manifest change, at a checkpoint when AIRD artifacts changed, and at
    final verification—not after every source edit.
-7. **Checkpoint routinely; stop only at a hard context boundary.** Checkpoint
+7. **Checkpoint routinely; transfer before an expensive context boundary.** Checkpoint
    after every execution slice, but do not end the root task merely because a
    slice finished. After checkpointing, discard slice-local details, rebuild
-   the next compact brief from disk, and continue with a fresh worker when the
-   next dependency is ready. End the root task only when one of these
+   the next compact brief from disk, and continue with the next lean-routed executor when the
+   next dependency is ready. End and hand over the root task after six slices
+   since the last handoff or at about 70% context, even when delivery is smooth;
+   write `checkpoint_kind: proactive_handoff`. Also end when one of these
    hard-stop conditions is true: context usage reaches 100%; auto-compaction
    or summary injection occurred; or delivery state/evidence remains ambiguous
    after one narrow recovery attempt. For any truncated read, first
@@ -120,14 +152,27 @@ These are blocking rules, not preferences. Violating them is what turns a delive
    output cap. Truncation alone is not a stop while a bounded recovery is
    available. When a hard stop is reached, the **very next action** is writing
    `STATE.md` + `.continue-here.md` and ending the current root task.
-8. **STATE is an index, not a transcript.** Keep current position, closed
-   workorders/findings, evidence pointers, blockers, and exact next action.
-   Detailed chronology belongs under `evidence/`. After pre-flight, read only
-   STATE frontmatter, Current Position, the active workorder block, and Exact
-   Next Action; never dump the whole file back into context.
-9. **No duplicate transport.** Do not both print a report in commentary and
+8. **STATE is a bounded index, not a transcript.** Append slice outcomes only
+   with `assets/templates/state-slice-entry.md`; each entry has exactly eight
+   non-empty lines. Before adding the first entry for a new active wave, move
+   every older-wave slice entry to `evidence/state-archive.md`, leaving only
+   the current wave in `STATE.md`. Keep current position, evidence pointers,
+   blockers, and exact next action. After pre-flight, read only STATE
+   frontmatter, Current Position, the current-wave entry, and Exact Next
+   Action; never dump the whole file back into context.
+9. **Numbers have one home.** Counts, durations, pass/fail totals, and other
+   slice measurements live only in the evidence file. `STATE.md` and a worker's
+   `numbers` field point to its count section. User commentary states meaning
+   and verdict, never repeats the measurements.
+10. **No duplicate transport.** Do not both print a report in commentary and
    later repeat it in final. Do not copy an evidence file into chat. One-line
    progress updates may name only the changed state, blocker, or gate verdict.
+11. **Bound every command result at the command.** Every verification or
+   exploratory command that can produce variable output must redirect its raw
+   stdout/stderr to an evidence log and end the chat-visible result with a
+   counter or `tail -N`. Use `rg -c`, tool-native summary flags, or a bounded
+   `tail`; never emit raw `tsc`, test, build, recursive search, or migration
+   output and try to trim it after it entered context.
 
 ### Mandatory Slice Checkpoint
 
@@ -135,7 +180,8 @@ At the end of every execution slice (implementation, finding-group author
 work, restricted closure, or verification gate):
 
 1. inspect only the slice's scoped diff and author evidence;
-2. update `STATE.md` and `.continue-here.md` with paths and exact next action;
+2. update `STATE.md` with the eight-line slice template and update
+   `.continue-here.md` with paths and exact next action;
    set `checkpoint_kind: routine` without changing delivery status unless a
    hard stop, blocker, or user decision actually pauses delivery;
 3. run the validator once when AIRD artifacts changed;
@@ -147,8 +193,8 @@ work, restricted closure, or verification gate):
 A routine slice checkpoint must not tell the user to open a new task. Prefer
 automatic continuation in the same root turn when the user asked to continue,
 finish, or run the delivery loop. A later **fresh Codex task/session** starts a
-new disposable root context from the checkpoint only after a hard-stop
-condition, an external blocker, or a required user decision. A new turn in the
+new disposable root context from the checkpoint after the proactive six-slice
+or 70% handoff, a hard-stop condition, an external blocker, or a required user decision. A new turn in the
 same long thread does not reset token cost, so do not mislabel it as fresh; it
 may still continue safely while the hard-stop conditions remain false. If the
 product cannot restart the root context automatically, ask for a fresh task
@@ -170,10 +216,10 @@ require them.
 
 ## Workorder Sizing Gate
 
-A workorder is executable only if a single worker can complete it in one fresh context without degradation. At pre-flight, check workorders in the selected accepted dependency closure, not later draft waves, against:
+A workorder is executable only if one executor can complete it in one bounded context without degradation. The orchestrator is the default executor for implementation, spike, and fix workorders; an implementation worker is eligible only under the two spawn justifications below. At pre-flight, check workorders in the selected accepted dependency closure, not later draft waves, against:
 
 - it has a **Task Breakdown of 1–3 atomic tasks** (an atomic task = one coherent edit unit: one endpoint, one component, one migration, one config surface — roughly one commit);
-- the worker can finish it while staying within about half of a fresh context window (inputs + files it must open + its own diff);
+- the executor can finish it while staying within about half of its context window (inputs + files it must open + its own diff);
 - its docs-to-read list names specific files/sections, not "the whole package".
 
 An oversized workorder blocks only its affected wave. Route that wave back to
@@ -182,7 +228,14 @@ runnable ownership slice over mechanical one-file fragmentation.
 
 ## Independence Rules
 
-- Spawn one worker per independent workorder; group independent workorders into **waves** (parallel where write sets and dependencies do not collide, sequential otherwise).
+- Do not spawn an implementation worker for a single ready workorder or a sequence of workorders. The orchestrator executes that work directly.
+- Spawn an implementation worker on either of exactly two justifications:
+  1. **Actual parallelism.** At least two large, substantive slices are dependency-ready and can run concurrently with disjoint write sets. The orchestrator may execute one concurrent slice; run at most two implementation workers at once. Stop spawning as soon as only one ready slice remains.
+  2. **Context headroom.** The orchestrator's own context is at or above 60% and a substantive slice remains — spawn even though that slice is the only one ready. Executing slices in the orchestrator is what keeps sequential work cheap, and it is also what accumulates the diffs, opened files, and test output the operating model says must not be held. Checkpointing tells you to discard slice-local detail; a fresh worker context is what actually guarantees it. The hard stops at 100% context and auto-compaction are recovery, not routing: by then the expensive part already happened.
+- Below 60% with one ready slice, the orchestrator implements it. Above 60%, hand it off and keep the orchestrator as a compact router. Record which of the two justifications applied in the delivery brief.
+- Do not spawn a worker for a purely mechanical closure: exact lock/count updates, snapshots, fixtures, imports, formatting, deterministic test expectation updates, AIRD evidence/checkpoints, or an adjacent path-scope correction that changes no production behavior. The orchestrator handles one coherent mechanical finding group as its own bounded slice and records the same evidence.
+- A fix is not mechanical when it changes production source behavior, architecture, auth/security/privacy, persisted data or migrations, public/runtime contracts, concurrency, or requires domain judgment. That classification increases review and verification depth; it does not by itself justify a worker. Keep the fix with the orchestrator unless it satisfies one of the two spawn justifications.
+- If an impact-radius omission is discovered only after a worker ran, do not spawn another agent merely to compensate. Record a fix workorder and repair the scoped test/fixture closure locally when deterministic; return to discovery when the missing scope changes the accepted product or architecture contract.
 - Use `fork_turns: "none"` for workers. Pass only the workorder path, the named AIRD doc paths, and standards refs; never pass the parent transcript. `fork_turns`, not `fork_context`, is the supported spawn field.
 - Keep write sets disjoint. If two workorders need the same file, sequence them or create an integration workorder.
 - A worker must not choose architecture. If the brief is insufficient, the worker STOPs and reports a blocker; the main session routes it back to `architect`/discovery.
@@ -200,6 +253,11 @@ remote-tracking ref, then run the deterministic check before spawning anything:
 node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-validate.mjs" ".agent/aird/<feature-slug>"
 ```
 
+Use the validator's `waveDigest` as the pre-flight brief for surface,
+dependencies, write scope, impact radius, and runtime profiles. Do not scan all
+workorder bodies or rebuild their frontmatter with `awk`; open only the selected
+wave's workorder body and its named `docs_to_read` sections when its slice starts.
+
 Select the earliest `readyWaves` entry from validator output unless `STATE.md`
 names another valid accepted wave. A nonzero result blocks only the base or
 wave named by the error; an unchanged independent accepted wave remains
@@ -212,6 +270,22 @@ implementation. Missing database/container/browser credentials or fixtures
 sets verification/release to blocked; it does not block reversible code work.
 Migration history edits still block immediately because they can make the
 implementation itself unsafe.
+
+Impact radius is decided in discovery, and delivery verifies it rather than
+discovers it. Every contract-changing workorder carries an `impact_radius` list
+naming the enum/schema/count locks, snapshots, fixtures, generated expectations,
+and direct consumer tests it touches, all inside its write scope;
+`aird-validate.mjs` fails the workorder otherwise, so pre-flight already caught
+an undeclared or out-of-scope radius.
+
+Before implementing or spawning a contract-changing slice, spot-check that
+declared radius with one bounded search from the symbols actually being changed,
+and enumerate or run the relevant existing regressions. A correct declaration
+costs one command to confirm. If the search finds a lock the radius missed,
+that is a discovery defect: repair the package before acceptance, or route an
+already-accepted wave through the smallest scoped contract revision before
+starting. Do not manufacture a later fix-agent cycle. Record the searched paths
+and the result in the delivery brief.
 
 For an auth/API/protocol/restart-sensitive workorder, perform one bounded
 plumbing check before spawning implementation. Record a four-column table in
@@ -254,12 +328,9 @@ not a prerequisite workorder in the implementation dependency chain.
 Set `STATE.md` to `in_delivery`, set `active_wave`, and write the one-page
 delivery brief. Do not regroup or semantically re-review the accepted wave.
 
-### 2. Spawn Implementation Agents
+### 2. Route Implementation Execution
 
-Route by frontmatter `surface`: `backend-worker` for backend/data/infra runtime
-work, `frontend-worker` for frontend, `worker` for small mixed/tooling/docs,
-`debugger` first for bug isolation, and `cybersec` for explicitly
-security-sensitive risks. Do not route by keyword matches in the body.
+Apply the spawn gate before role routing. If only one implementation slice is ready and the orchestrator is under 60% context, the orchestrator implements it. For a slice eligible under either justification — actual parallelism or context headroom — route by frontmatter `surface`: `backend-worker` for backend/data/infra runtime work, `frontend-worker` for frontend, and `worker` for mixed/tooling/docs. Use `debugger` for a required bug-isolation pass and `cybersec` for an explicitly required security review; those specialist gates do not turn a sequential implementation workorder into a worker spawn. Do not route by keyword matches in the body.
 
 Standards via `$code-review-standards` — with a hard cap. Every subagent already pays a ~28K-token spawn tax (permissions instructions + AGENTS.md) before reading anything; do not add a 25K standards pile on top. Rules:
 
@@ -276,9 +347,14 @@ Standards via `$code-review-standards` — with a hard cap. Every subagent alrea
   for tooling choices with primary-source verification;
 - never load both frontend and backend stacks into one agent — if a workorder genuinely spans both, that is a sizing failure: split it.
 
-Per worker, pass: one workorder path; named AIRD doc paths; selected standards refs and the instruction to use Worker Mode before coding; the few locked decisions/risk gates relevant to this workorder; UX/UI constraints for user-facing work; allowed read/write scope; required tests; instruction to edit files directly, run its own targeted tests with output to a log file, and report the summary-with-pointers shape from the Context Budget Hard Rules. Keep prompts compact — paths and constraints, not copied AIRD sections.
-Tell the worker explicitly that its chat final is capped at 10 lines and that
-detailed results must be written to the workorder evidence directory.
+The Build-Less Ladder lives inside `structure-reuse-performance.md`, an always-loaded file, so it costs nothing against the cap. Instruct every implementer — orchestrator included — to climb it before writing: skip what is not needed, reuse what already exists, standard library, native platform feature, already-installed dependency, one line, then minimum code. Instruct every reviewer to run the over-engineering pass from the skill's Reviewer Mode as part of its existing pass, not as an extra spawn. The ladder governs how much code a slice writes, never how much it verifies: required tests, gates, and evidence stay exactly what the accepted workorder, DoD, and runtime profiles demand, and a fix still targets the root cause across all callers rather than the reported path alone.
+
+Build every implementation-worker prompt from
+`assets/templates/worker-prompt.md`. Fill only its ten slice-specific lines;
+do not recreate the fixed language, runtime, evidence, scope, command-output,
+or reporting rules in chat. The worker writes detailed results to the
+workorder evidence directory and returns exactly the template's six report
+fields.
 
 ### 3. Integrate (per wave)
 
@@ -289,12 +365,13 @@ blockers, evidence pointers, and exact next action; create follow-up workorders
 for unresolved blockers. This ends the slice, not automatically the root task.
 If no hard-stop condition is true, rehydrate the compact next-slice brief from
 disk and continue with the next dependency-compatible workorder or wave
-verification using a fresh subagent.
+verification, spawning a worker only when one of the two spawn justifications
+is satisfied.
 
 ### Review Scheduling Policy
 
 Run at most one **broad** reviewer pass per integrated wave, never
-automatically per workorder. Workers run targeted tests on their own diffs; the
+automatically per workorder. The slice implementer runs targeted tests on its diff; the
 wave reviewer checks the integrated wave diff against the AIRD package, DoD,
 standards, and risk gates. Restricted closure reviews are not additional broad
 passes: they inspect only open finding IDs and fix-caused hunks.
@@ -417,11 +494,16 @@ If a live preview is unavailable, a `qa` review against the UI spec may record u
 For each verification finding:
 
 1. Classify severity and affected DoD item.
-2. Create or update `fix-workorders/F-NNNN.md` from
-   `assets/templates/fix-workorder.md`. Fix workorders obey the same sizing gate
-   but live outside discovery's immutable `workorders/` and therefore do not
-   invalidate the accepted-wave hash manifest.
-3. Assign the smallest appropriate worker in a fresh context.
+2. For a transport/wiring residual that only restores an already accepted
+   contract (shared error mapping, route/export registration, import, or an
+   equivalent one-location closure), create `finding-notes/F-NNNN.md` from
+   `assets/templates/finding-note.md`. It contains only finding, file, expected
+   behavior, and evidence. Use the full
+   `fix-workorders/F-NNNN.md` template only when the repair changes accepted
+   product behavior, architecture, security, persisted data, or requires a
+   multi-step implementation slice. Both locations stay outside discovery's
+   immutable `workorders/` and do not invalidate accepted hashes.
+3. Choose the smallest executor. The orchestrator fixes the coherent finding group locally, including non-mechanical fixes. Spawn an implementation worker only under the two spawn justifications: the group is a large independent slice running concurrently with another dependency-ready slice, or the orchestrator is at/above 60% context with substantive work left. A production-behavior change or specialist judgment alone does not justify a worker.
 4. Re-run only impacted author tests after each fix. Do not spawn reviewer/QA
    while sibling fixes from the same finding group remain open. After the
    whole finding group is author-complete, run one restricted closure pass on
@@ -440,7 +522,8 @@ Bound the whole loop: at most 3 full verification cycles per delivery run. New b
 Do not mark delivery complete while reviewer, QA, browser, or usability gates have blocking findings.
 
 On every context checkpoint, write `.continue-here.md` from
-`assets/templates/continue-here.md` with `checkpoint_kind: routine|hard_stop`,
+`assets/templates/continue-here.md` with
+`checkpoint_kind: routine|proactive_handoff|hard_stop`,
 exact next action, completed work, blockers, and required reading. A routine
 checkpoint does not set `STATE.md` to `paused`; a hard stop, external blocker,
 or required user decision may do so when delivery genuinely cannot continue.
@@ -465,9 +548,61 @@ Delivery is complete only when:
 - `STATE.md` passed through `implementation_complete` → `verifying` → `ready_for_release` and now shows `status: complete`, with `ready_for_release: ready`; a required-gate waiver or deferred required work keeps `status: paused` and the release verdict `NO-GO`;
 - final diff is scoped and explainable.
 
+## Process Metrics And Loop Improvement
+
+At the terminal outcome of the delivery run — `status: complete`, or a terminal
+`paused`/`NO-GO` with an escalation — run the end-of-loop improvement phase
+from the discovery skill's `references/process-metrics.md` (the canonical
+contract):
+
+1. Write the delivery metrics record to
+   `.agent/aird/<feature-slug>/metrics/delivery-<wave>.json` using the
+   canonical schema (`kind: delivery`; `runtime` names the runtime actually
+   executing this loop — `claude` or `codex`). It covers the whole
+   delivery, including slices from earlier root sessions — read the
+   `.continue-here.md`/`STATE.md` counters and `evidence/state-archive.md`
+   rather than recounting from memory. A value you cannot derive is `null`,
+   never an estimate. An escalated or paused run records the same schema:
+   failed runs are the most valuable records the loop produces.
+2. Append the record as one line to `~/.agent/aird-metrics/history.jsonl` and
+   compare against previous runs (`tail -n 20`, same kind; same profile when
+   at least 3 records share it) using the delivery signals defined in the
+   contract. Any nonzero `discovery_defects` value is a **discovery-skill**
+   signal — the proposal it produces targets the discovery skill's rules, not
+   this file.
+3. A systemic signal (fired in this run and in a compared previous run, or any
+   ⚠-signal) must append a proposal to
+   `~/.agent/aird-metrics/improvement-backlog.md`; a first-time signal becomes
+   a watch item. Deduplicate against existing entries. Never edit skill files,
+   references, templates, or validator scripts yourself — proposals wait for
+   an explicit user decision, and an accepted proposal is applied to both the
+   Claude and Codex skill copies with its eval case per the contract.
+
+Routine slice checkpoints and fresh-task handoffs do **not** record — only the
+terminal outcome does, once. The phase is bounded like everything else here: a
+few compound bash commands, no subagents, no extra reviewer calls, and it never
+blocks completion or changes the release verdict. If the store is unreadable,
+record what you can, note the skip, and continue.
+
 ## Final Response
 
-Summarize: AIRD path and workorders executed; waves and agents used with scopes; changed files; gates run with evidence pointers; remaining risks or deferred work; whether the DoD passed. Keep it a summary with pointers — the evidence lives in the package, not in the reply.
+Write the final response in clear Russian. Explain which implementation stages
+and workorders were completed, how the delivered behavior now works from start
+to finish, which files and system boundaries changed, which checks ran and what
+their evidence proves, which risks or deferred items remain, and whether all
+completion criteria passed. Include AIRD and evidence paths as references, but
+do not replace the explanation with paths or raw status labels.
+
+Avoid unexplained abbreviations and English terminology. Preserve an exact
+technical name only when needed and explain it in Russian on first use. Keep
+the response proportionate to the delivery, while still making the result
+understandable without reading raw logs.
+
+A terminal final response ends with the «Улучшение процесса» block required by
+`references/process-metrics.md`: the few metrics most worth attention with
+their comparison against previous AIRD runs, fired signals, and the generated
+proposals that need a user decision — or an explicit «системных отклонений
+нет».
 
 Routine nonterminal slice checkpoints are concise commentary updates, not final
 responses. Use a final checkpoint response only when pausing for a hard context

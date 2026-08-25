@@ -12,6 +12,12 @@ risk_ids: []
 gate_ids: []
 dod_ids: []
 allowed_write_paths: []
+# Everything that locks the contract this slice changes: consumer tests,
+# snapshots/goldens, fixtures, enum/schema/count locks, generated expectations.
+# Found by one bounded search at drafting time, not by a delivery worker after
+# the fact. Every path listed here must sit inside allowed_write_paths --
+# `aird-validate.mjs` checks that. An explicit `[]` is a valid answer.
+impact_radius: []
 docs_to_read: []
 # Only when a soft sizing limit is deliberately exceeded (>6 non-test write
 # paths, >3 dod_ids, >10 negative cases): say why the slice cannot be cut.
@@ -104,6 +110,16 @@ validator and fatal under the `--strict` discovery run: 6 non-test write paths,
 - Observability/audit requirements:
 - Rollout/fallback requirements:
 
+## Shared Error And Public Wiring Pre-flight
+
+Run one bounded repository search while drafting. Redirect raw matches to
+package evidence and show only a count or `tail -N`.
+
+- Error/public surface introduced or changed: <description | not applicable — reason>
+- Shared service error renderer/mapper: <path + required scope outcome | not applicable — reason>
+- Public route/export/registration root: <path + required scope outcome | not applicable — reason>
+- Evidence command: <bounded rg/git grep command + evidence path>
+
 ## Must Haves
 
 ### Truths
@@ -147,6 +163,9 @@ validator and fatal under the `--strict` discovery run: 6 non-test write paths,
 
 ## Reporting
 
-Report changed files, tests run, deviations from AIRD, and blockers. Never return empty or a bare "done": if you produced nothing or were blocked, say so explicitly with the reason — a silent or vacuous result is treated as a failure.
+Return exactly six one-line fields: `status`, `paths`, `commands` with exit
+codes, `numbers` as an evidence-section pointer, `evidence`, and `blockers`.
+Never add a table or seventh field. Detailed results and numeric values belong
+in evidence, not in the chat response. A silent or vacuous result is a failure.
 
 If this workorder does not fully determine the design, STOP: make no architectural decisions, implement nothing speculative, and report the gap as a blocker so the main session can route it back to `architect`/discovery.

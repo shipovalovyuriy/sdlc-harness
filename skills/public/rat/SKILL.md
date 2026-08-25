@@ -1,6 +1,6 @@
 ---
 name: rat
-description: "Use for Riskiest Assumption Test work: identify, rank, and test risky assumptions behind a product, feature, startup idea, pricing model, GTM plan, technical architecture, AI workflow, or business hypothesis. Trigger on RAT, risk assumption, riskiest assumption, assumption testing, validate idea, de-risk, hypothesis test, or what can kill this idea. Do not use for generic code review unless the task is about validating assumptions behind the change."
+description: "Use for Riskiest Assumption Test work: identify, rank, pressure-test, and test risky assumptions behind a product, feature, startup idea, pricing model, GTM plan, technical architecture, AI workflow, or business hypothesis. Trigger on RAT, risk assumption, riskiest assumption, assumption testing, validate idea, de-risk, hypothesis test, stress-test this, pressure-test this, or what can kill this idea. Do not use for generic code review unless the task is about validating assumptions behind the change."
 ---
 
 # RAT
@@ -10,6 +10,17 @@ description: "Use for Riskiest Assumption Test work: identify, rank, and test ri
 Help the user apply RAT: Riskiest Assumption Test.
 
 The goal is not to build the full product or feature. The goal is to find the assumption that could kill the idea fastest, then design the cheapest credible test for it.
+
+## Fit Gate
+
+Use RAT when the user has a meaningful bet, decision, or hypothesis with real uncertainty and a cost of being wrong.
+
+Do not run RAT for:
+
+- factual lookups with one correct answer;
+- pure creation tasks with no decision to de-risk;
+- casual low-stakes "should I" prompts;
+- generic validation where the user only wants encouragement.
 
 ## Core Principle
 
@@ -34,6 +45,24 @@ Use `references/rat-framework.md` for category definitions and scoring rules. Us
 
 ## RAT Workflow
 
+### 0. Frame The Context
+
+Before scoring, quickly enrich the user's prompt with relevant context. Spend up to 30 seconds looking for the 2-3 highest-signal files or facts when they are available:
+
+- files the user explicitly mentioned or attached;
+- current repo docs, roadmap, PRD, requirements, metrics, research notes, launch notes, or pricing data;
+- project guidance files such as `AGENTS.md`, `README.md`, product docs, or memory/context folders when they are clearly relevant.
+
+Frame the RAT neutrally:
+
+1. What decision, idea, or bet is being tested.
+2. Who the target user/customer is.
+3. What evidence is already known.
+4. What is assumed or missing.
+5. What is at stake if the bet is wrong.
+
+Do not add your own opinion while framing. If the request is too vague to identify the bet, ask one clarifying question and then proceed.
+
 ### 1. Restate The Idea
 
 Summarize the idea in one clear sentence:
@@ -53,7 +82,19 @@ Generate assumptions across:
 - **Adoption**: buyer, user, approver, blocker, habits, incentives, integrations, politics.
 - **Compliance / trust**: privacy, security, legal, reputation, explainability, data/model trust.
 
-### 3. Score Assumptions
+### 3. Pressure-Test From Five Lenses
+
+Before picking the RAT, review the assumption map through five lenses. Do this yourself unless the user explicitly asks for parallel agents.
+
+- **Contrarian**: What fatal flaw, hidden blocker, or false premise would make this fail?
+- **First principles**: What problem are we actually solving, and is this the right bet?
+- **Expansionist**: If this works, what upside, adjacent market, or stronger offer is being underweighted?
+- **Outsider**: What is confusing, jargon-heavy, or obvious only to insiders?
+- **Executor**: What can be tested Monday morning with the least build, spend, and coordination?
+
+Use these lenses to add missing assumptions, sharpen wording, and expose blind spots. Do not let the lenses replace evidence-based scoring.
+
+### 4. Score Assumptions
 
 Score each assumption from 1 to 5:
 
@@ -68,13 +109,20 @@ Risk Score = Uncertainty x Impact
 Priority Score = Risk Score x Testability
 ```
 
-### 4. Pick The RAT
+### 5. Pick The RAT
 
 Choose the top 1-3 assumptions. The #1 RAT should be the assumption that gives the most learning with the least building.
 
 Prefer tests that can be done before implementation. Do not recommend a full MVP if a cheaper RAT can test the same assumption.
 
-### 5. Design Tests
+Run a final blind-spot check before committing:
+
+1. Which high-priority assumption has the strongest evidence against it?
+2. Which scored assumption looks important only because it is easy to test?
+3. What did the first pass miss about buyers, blockers, trust, or execution?
+4. What single test would most change the decision?
+
+### 6. Design Tests
 
 For each top assumption, define:
 
@@ -89,7 +137,7 @@ For each top assumption, define:
 - what to do if the test passes;
 - what to do if the test fails.
 
-### 6. Choose Test Type
+### 7. Choose Test Type
 
 Prefer the lightest credible test, roughly in this order:
 
@@ -112,12 +160,18 @@ Always return this structure:
 ```md
 ## RAT Summary
 
-One-paragraph summary of the idea and the biggest risk.
+One-paragraph summary of the framed idea, the biggest risk, and the evidence already known.
 
 ## Assumption Map
 
 | # | Assumption | Category | Uncertainty 1-5 | Impact 1-5 | Testability 1-5 | Priority |
 |---|---|---|---:|---:|---:|---:|
+
+## Pressure-Test Notes
+
+- Agreement:
+- Tension:
+- Blind spots caught:
 
 ## Top RAT
 
@@ -156,6 +210,10 @@ Give concrete next steps.
 - Continue if:
 - Pivot if:
 - Kill if:
+
+## One Thing To Do First
+
+State the single next test or evidence-gathering step.
 ```
 
 End with the single best next test.

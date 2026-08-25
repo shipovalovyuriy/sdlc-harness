@@ -26,7 +26,9 @@ import {
   parseFrontmatter,
   parseGateDodMapping,
   parseStateBlockers,
+  parseStateFindings,
   parseWaveOutcomes,
+  writeScopeCovers,
 } from './aird-contract.mjs';
 
 const args = process.argv.slice(2);
@@ -103,6 +105,52 @@ function fail(message) {
 
 function read(path) {
   try { return readFileSync(path, 'utf8'); } catch { return ''; }
+}
+
+function inspectSharedErrorAndWiringPreflight(workorder) {
+  const heading = /^##\s+Shared Error And Public Wiring Pre-flight\s*$/im;
+  const start = workorder.text.search(heading);
+  if (start < 0) return ['missing `## Shared Error And Public Wiring Pre-flight` section'];
+  const afterHeading = workorder.text.slice(start).replace(heading, '');
+  const body = afterHeading.split(/\n##\s+/)[0];
+  const required = [
+    'Error/public surface introduced or changed',
+    'Shared service error renderer/mapper',
+    'Public route/export/registration root',
+    'Evidence command',
+  ];
+  const issues = [];
+  for (const label of required) {
+    const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = body.match(new RegExp(`^-\\s*${escaped}:\\s*(.+)$`, 'im'));
+    if (!match || !match[1].trim() || /<[^>]+>/.test(match[1])) {
+      issues.push(`pre-flight field \`${label}\` is missing or still a placeholder`);
+    }
+  }
+  const evidence = body.match(/^-\s*Evidence command:\s*(.+)$/im)?.[1] ?? '';
+  if (evidence && !/\b(?:rg|git\s+grep)\b/.test(evidence)) {
+    issues.push('pre-flight Evidence command must use a bounded rg/git grep search');
+  }
+  if (evidence && !/(?:\brg\b[^\n]*\s-c\b|--count\b|\bwc\s+-l\b|\btail\s+-\d+\b)/.test(evidence)) {
+    issues.push('pre-flight Evidence command must end its visible output with a counter or tail -N');
+  }
+  if (evidence && !/\bevidence\//.test(evidence)) {
+    issues.push('pre-flight Evidence command must store raw matches under package evidence/');
+  }
+  return issues;
+}
+
+function parseStateSliceEntries(text) {
+  const heading = /^##\s+Current Wave Slice Index\s*$/im;
+  const match = heading.exec(text);
+  if (!match) return [];
+  const remainder = text.slice(match.index + match[0].length);
+  const nextHeading = remainder.search(/^##\s+/m);
+  const sectionBody = nextHeading >= 0 ? remainder.slice(0, nextHeading) : remainder;
+  return sectionBody
+    .split(/(?=^###\s+)/m)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => /^###\s+/m.test(chunk));
 }
 
 function profileLimit(profile) {
@@ -223,6 +271,21 @@ if (manifest) {
 
 const activeWave = state.active_wave && state.active_wave !== 'none' ? state.active_wave : null;
 const validAcceptedWaves = Object.entries(waveResults).filter(([, result]) => result.valid).map(([wave]) => wave);
+
+// STATE is a bounded current-wave index. The strict eight-line shape prevents
+// a slice transcript from silently growing inside the orchestrator context.
+for (const entry of parseStateSliceEntries(stateText)) {
+  const report = GATED.has(status) ? err : warn;
+  const lines = entry.split(/\r?\n/).filter((line) => line.trim());
+  if (lines.length !== 8) report(`STATE.md slice entry must contain exactly 8 non-empty lines; found ${lines.length}`);
+  for (const label of ['Срез', 'Волна', 'Вердикт', 'Числа', 'Доказательства', 'Открытые остатки', 'Следующее действие']) {
+    if (!new RegExp(`^-\\s*${label}:`, 'm').test(entry)) report(`STATE.md slice entry is missing required field \`${label}\``);
+  }
+  const entryWave = entry.match(/^-\s*Волна:\s*(W\d+)\s*$/m)?.[1] ?? null;
+  if (activeWave && entryWave && entryWave !== activeWave) {
+    report(`STATE.md keeps slice entry for ${entryWave} while active_wave is ${activeWave}; move older-wave entries to evidence/state-archive.md`);
+  }
+}
 for (const [wave, result] of Object.entries(waveResults)) {
   if (result.valid) continue;
   const message = `accepted wave ${wave} is invalid: ${result.issues.join('; ')}`;
@@ -292,6 +355,30 @@ if (v4Mode) {
       }
       if (!workorder.docsToRead.length) {
         reportWorkorderIssue(workorder, 'docs_to_read is empty; name the exact files/sections instead of the whole package');
+      }
+
+      // This is a discovery-only contract gate. It stays a warning so an old,
+      // already accepted wave remains deliverable under the plain validator;
+      // discovery's mandatory --strict run promotes it to a failure before a
+      // new wave can be reviewed and accepted.
+      for (const issue of inspectSharedErrorAndWiringPreflight(workorder)) {
+        warn(`${workorder.file}: ${issue}`);
+      }
+
+      // Impact radius is contract data, decided in discovery. The tests,
+      // snapshots, fixtures, and generated expectations that lock the contract
+      // this slice changes must already sit inside its write scope; a delivery
+      // worker that discovers them afterwards costs a whole fix cycle. An
+      // explicit `impact_radius: []` is a valid and deliberate answer.
+      if (!Object.prototype.hasOwnProperty.call(workorder.frontmatter, 'impact_radius')) {
+        reportWorkorderIssue(workorder, 'declares no `impact_radius:` list; name the tests, snapshots, fixtures, enum/schema locks, and generated expectations that lock the contract this slice changes (an empty list is a valid answer)');
+      } else {
+        const uncovered = asList(workorder.frontmatter.impact_radius)
+          .filter((path) => path && !/^none$/i.test(path))
+          .filter((path) => !writeScopeCovers(workorder.allowedWritePaths, path));
+        if (uncovered.length) {
+          reportWorkorderIssue(workorder, `impact_radius names ${uncovered.join(', ')} outside allowed_write_paths; the executor cannot update what it may not write, so widen the scope here instead of paying a later fix cycle`);
+        }
       }
     }
 
@@ -604,6 +691,70 @@ if (filesOnDisk.has('02-ui-prototype.md')) {
   }
 }
 
+// The review budget is contract data for the same reason blockers are. Discovery
+// spends exactly one final combined reviewer call and seals the finding window
+// when its response returns; a ledger written as prose stops neither a second
+// review nor a closure nobody can check.
+{
+  const policy = (message) => (GATED.has(status) ? err(message) : warn(message));
+  const rawCalls = String(state.review_calls_used ?? '').trim();
+  const calls = /^\d+$/.test(rawCalls) ? Number(rawCalls) : null;
+  if (!Object.prototype.hasOwnProperty.call(state, 'review_calls_used')) {
+    policy('STATE.md frontmatter declares no `review_calls_used:`; the one-call review budget has to be a counted field, not a prose ledger');
+  } else if (calls === null) {
+    err(`STATE.md review_calls_used must be a non-negative integer; got ${rawCalls || '(empty)'}`);
+  } else if (calls > 1) {
+    err(`STATE.md records ${calls} final combined review calls; discovery permits one. Only a tool failure that returned no usable verdict may be retried -- a disagreement or a wish for more confidence does not reset the budget.`);
+  }
+
+  const cutoff = String(state.finding_cutoff ?? '').trim();
+  if (cutoff && !['open', 'sealed'].includes(cutoff)) {
+    err(`STATE.md finding_cutoff must be open or sealed; got ${cutoff}`);
+  }
+  const coverage = String(state.review_coverage ?? '').trim();
+  if (coverage && !['unverified', 'partial', 'complete'].includes(coverage)) {
+    err(`STATE.md review_coverage must be unverified, partial, or complete; got ${coverage}`);
+  }
+  const exception = String(state.review_exception ?? 'none').trim();
+  if (!['none', 'critical-security', 'irreversible-data-loss'].includes(exception)) {
+    err(`STATE.md review_exception must be none, critical-security, or irreversible-data-loss; got ${exception}`);
+  }
+
+  if (GATED.has(status)) {
+    if (calls !== null && calls < 1) {
+      err(`status ${status} claims an accepted wave, but STATE.md review_calls_used is ${calls}; the final combined review has not run`);
+    }
+    if (cutoff !== 'sealed') {
+      err(`status ${status} requires STATE.md finding_cutoff: sealed; got ${cutoff || '(missing)'}`);
+    }
+    // A one-shot review of a whole package fails by running out of context, not
+    // by returning the wrong opinion. Partial coverage earns one completion of
+    // the same pass; it is not a licence to open a new opinion round.
+    if (coverage !== 'complete') {
+      err(`status ${status} requires STATE.md review_coverage: complete; got ${coverage || '(missing)'}. The final reviewer reports which workorders and documents it actually read -- partial coverage means finishing that same pass, not opening a new review round.`);
+    }
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(state, 'findings')) {
+    policy('STATE.md frontmatter declares no `findings:` list; register the final review\'s findings as contract data (an empty list is a valid answer)');
+  }
+  for (const finding of parseStateFindings(stateText)) {
+    const id = finding.id || '(unnamed)';
+    if (finding.id && !/^F-\d{4}$/.test(String(finding.id))) {
+      warn(`STATE.md finding ${id} does not use a monotonic F-0001 style id`);
+    }
+    if (!finding.closure_criterion) {
+      policy(`STATE.md finding ${id} has no closure_criterion; the orchestrator closes its own fixes, so the bar has to be written down before the fix is`);
+    }
+    if (!finding.evidence_command) {
+      policy(`STATE.md finding ${id} has no evidence_command; a closure criterion nobody can run is a rubber stamp with extra steps`);
+    }
+    if (!truthy(finding.closed) && GATED.has(status)) {
+      err(`STATE.md finding ${id} is open; close it against its original criterion before claiming ${status}`);
+    }
+  }
+}
+
 // Product-first, measured by outcome instead of by a self-declared work_class.
 // A wave whose exit is only an internal API or tool surface is a platform
 // slice; that can be the right call, but it is the user's call to make.
@@ -821,6 +972,22 @@ if (status === 'complete') {
 }
 
 const ok = errors.length === 0 && (!strict || warnings.length === 0);
+const workordersById = new Map(workorders.map((workorder) => [workorder.id, workorder]));
+const waveDigest = validAcceptedWaves.map((wave) => ({
+  wave,
+  workorders: (waveResults[wave]?.workorders ?? []).map((id) => {
+    const workorder = workordersById.get(id);
+    return {
+      id,
+      file: workorder?.file ?? null,
+      surface: workorder?.surface ?? null,
+      dependsOn: workorder?.dependsOn ?? [],
+      writeScope: workorder?.allowedWritePaths ?? [],
+      impactRadius: asList(workorder?.frontmatter?.impact_radius),
+      runtimeProfiles: workorder?.runtimeProfiles ?? [],
+    };
+  }),
+}));
 const result = {
   ok,
   package: packageDir,
@@ -835,6 +1002,7 @@ const result = {
   } : null,
   waves: waveResults,
   readyWaves: baseValid ? validAcceptedWaves : [],
+  waveDigest: baseValid ? waveDigest : [],
   artifactsTracked: artifactRows.length,
   workorders: workorders.length,
   implementationWorkorders: workorders.filter((workorder) => EXECUTABLE_KINDS.has(workorder.kind)).length,
@@ -857,6 +1025,12 @@ if (jsonOnly) {
   console.log(`AIRD validate: ${packageDir}`);
   console.log(`  status: ${status ?? '(none)'} | contract: ${result.contract} | workorders: ${workorders.length}`);
   if (manifest) console.log(`  base: ${manifest.base?.ref || '(missing)'} | ready waves: ${result.readyWaves.join(', ') || '(none)'}`);
+  for (const digest of result.waveDigest) {
+    console.log(`  wave digest ${digest.wave}:`);
+    for (const workorder of digest.workorders) {
+      console.log(`    ${workorder.id} | surface=${workorder.surface || '-'} | depends=${workorder.dependsOn.join(',') || '-'} | writes=${workorder.writeScope.join(',') || '-'} | impact=${workorder.impactRadius.join(',') || '-'} | profiles=${workorder.runtimeProfiles.join(',') || '-'}`);
+    }
+  }
   for (const message of errors) console.log(`  ERROR  ${message}`);
   for (const message of warnings) console.log(`  WARN   ${message}`);
   console.log(ok ? 'PASS' : 'FAIL');

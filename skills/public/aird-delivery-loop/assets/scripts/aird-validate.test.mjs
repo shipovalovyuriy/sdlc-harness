@@ -57,6 +57,10 @@ function stateText({
   profile = 'standard',
   packageClass = 'product',
   blockers = '[]',
+  reviewCallsUsed = 1,
+  findingCutoff = 'sealed',
+  reviewCoverage = 'complete',
+  findings = '[]',
   extraFrontmatter = '',
 } = {}) {
   return `---
@@ -66,6 +70,11 @@ package_class: ${packageClass}
 status: ${status}
 active_wave: ${activeWave}
 blockers: ${blockers}
+review_calls_used: ${reviewCallsUsed}
+finding_cutoff: ${findingCutoff}
+review_coverage: ${reviewCoverage}
+review_exception: none
+findings: ${findings}
 ${extraFrontmatter}---
 
 ## Blockers
@@ -87,6 +96,7 @@ function workorderText({
   gateIds = [],
   dodIds = [],
   writePaths = null,
+  impactRadius = '[]',
   docsToRead = ['04-trd.md#Target'],
   tasks = 1,
   extraFrontmatter = '',
@@ -115,6 +125,7 @@ risk_ids: [${riskIds.join(', ')}]
 gate_ids: [${gateIds.join(', ')}]
 dod_ids: [${dodIds.join(', ')}]
 allowed_write_paths: [${(writePaths ?? [`src/${id}.txt`]).join(', ')}]
+impact_radius: ${impactRadius}
 docs_to_read: [${docsToRead.join(', ')}]
 ${extraFrontmatter}---
 
@@ -131,6 +142,13 @@ ${taskLines}
 ## Must Haves
 
 - Observable behavior exists and is tested.
+
+## Shared Error And Public Wiring Pre-flight
+
+- Error/public surface introduced or changed: not applicable — fixture workorder
+- Shared service error renderer/mapper: not applicable — fixture workorder
+- Public route/export/registration root: not applicable — fixture workorder
+- Evidence command: rg -n 'error|route' src > evidence/preflight.log 2>&1; wc -l evidence/preflight.log
 ${verificationSection}`;
 }
 
@@ -250,6 +268,48 @@ try {
     const result = run(packageDir);
     assertResult('accepted W1 ignores draft W2', result, 0);
     assert(result.parsed.readyWaves.includes('W1'), 'accepted W1 was not reported ready');
+    const digest = result.parsed.waveDigest.find((entry) => entry.wave === 'W1');
+    assert(digest?.workorders?.[0]?.surface === 'backend', `wave digest omitted surface: ${result.stdout}`);
+    assert(Array.isArray(digest?.workorders?.[0]?.dependsOn), `wave digest omitted dependencies: ${result.stdout}`);
+    assert(Array.isArray(digest?.workorders?.[0]?.writeScope), `wave digest omitted write scope: ${result.stdout}`);
+    assert(Array.isArray(digest?.workorders?.[0]?.impactRadius), `wave digest omitted impact radius: ${result.stdout}`);
+    assert(digest?.workorders?.[0]?.runtimeProfiles?.includes('unit'), `wave digest omitted runtime profiles: ${result.stdout}`);
+    const textResult = spawnSync(process.execPath, [validator, packageDir], { encoding: 'utf8' });
+    assert(textResult.stdout.includes('wave digest W1:'), `plain validator output omitted wave digest:\n${textResult.stdout}`);
+  }
+
+  {
+    const { packageDir } = makeRepository('shared-handler-preflight-required', [{ id: 'WO-01' }]);
+    const path = join(packageDir, 'workorders', 'WO-01.md');
+    writeFileSync(path, readFileSync(path, 'utf8').replace(/\n## Shared Error And Public Wiring Pre-flight[\s\S]*$/, '\n'));
+    assertResult(
+      'strict discovery requires shared error and public wiring pre-flight',
+      run(packageDir, ['--strict']),
+      1,
+      'missing `## Shared Error And Public Wiring Pre-flight` section',
+    );
+  }
+
+  {
+    const { packageDir } = makeRepository('state-slice-entry-overflow', [{ id: 'WO-01' }]);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    writeFileSync(
+      join(packageDir, 'STATE.md'),
+      `${stateText({ status: 'in_delivery', activeWave: 'W1' })}
+## Current Wave Slice Index
+
+### WO-01
+- Срез: implementation
+- Волна: W1
+- Вердикт: pass
+- Числа: evidence/wo-01.md#counts
+- Доказательства: evidence/wo-01.md
+- Открытые остатки: none
+- Следующее действие: WO-02
+- Лишняя строка: должна быть отклонена
+`,
+    );
+    assertResult('STATE slice entries are capped at eight lines', run(packageDir), 1, 'exactly 8 non-empty lines');
   }
 
   {
@@ -775,6 +835,117 @@ existential_risks:
     assertResult('an undeclared blockers list is surfaced', run(packageDir), 0, 'declares no `blockers:` list');
   }
 
+  // --- Review budget, coverage, and finding closure ---------------------------
+
+  {
+    const { packageDir } = makeRepository('review-budget-exceeded', [{ id: 'WO-01' }]);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery', reviewCallsUsed: 2 });
+    assertResult('a second final combined review is rejected', run(packageDir), 1, 'discovery permits one');
+  }
+
+  {
+    const { packageDir } = makeRepository('review-cutoff-open', [{ id: 'WO-01' }]);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery', findingCutoff: 'open' });
+    assertResult('an unsealed finding window blocks readiness', run(packageDir), 1, 'requires STATE.md finding_cutoff: sealed');
+  }
+
+  {
+    const { packageDir } = makeRepository('review-coverage-partial', [{ id: 'WO-01' }]);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery', reviewCoverage: 'partial' });
+    assertResult('a review that covered part of the package blocks readiness', run(packageDir), 1, 'requires STATE.md review_coverage: complete');
+
+    setState(packageDir, { status: 'ready_for_delivery', reviewCoverage: 'unverified' });
+    assertResult('unreported coverage blocks readiness', run(packageDir), 1, 'requires STATE.md review_coverage: complete');
+  }
+
+  {
+    const { packageDir } = makeRepository('review-no-review-at-all', [{ id: 'WO-01' }]);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery', reviewCallsUsed: 0, findingCutoff: 'open', reviewCoverage: 'unverified' });
+    assertResult('an accepted wave with no review at all is caught', run(packageDir), 1, 'the final combined review has not run');
+  }
+
+  {
+    const { packageDir } = makeRepository('finding-without-evidence-command', [{ id: 'WO-01' }]);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, {
+      status: 'ready_for_delivery',
+      findings: `
+  - id: F-0001
+    statement: WO-01 consumes an ontology no workorder produces
+    closure_criterion: WO-01 cites docs/ontology.yaml and the validator passes
+    closed: true`,
+    });
+    assertResult('a finding with no runnable evidence is caught', run(packageDir), 1, 'rubber stamp with extra steps');
+  }
+
+  {
+    const { packageDir } = makeRepository('finding-left-open', [{ id: 'WO-01' }]);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, {
+      status: 'ready_for_delivery',
+      findings: `
+  - id: F-0001
+    statement: WO-01 consumes an ontology no workorder produces
+    closure_criterion: WO-01 cites docs/ontology.yaml and the validator passes
+    evidence_command: node aird-validate.mjs .agent/aird/feature --strict
+    closed: false`,
+    });
+    assertResult('an open finding blocks readiness', run(packageDir), 1, 'is open; close it against its original criterion');
+  }
+
+  {
+    const { packageDir } = makeRepository('review-ledger-undeclared', [{ id: 'WO-01' }]);
+    writeFileSync(
+      join(packageDir, 'STATE.md'),
+      stateText({ status: 'discovery' }).replace(/^review_calls_used: .*\n/m, '').replace(/^findings: \[\]\n/m, ''),
+    );
+    const result = run(packageDir);
+    assertResult('an undeclared review budget is surfaced', result, 0, 'declares no `review_calls_used:`');
+    assertResult('an undeclared findings list is surfaced', result, 0, 'declares no `findings:` list');
+  }
+
+  // --- Impact radius ----------------------------------------------------------
+
+  {
+    const { packageDir } = makeRepository('impact-radius-outside-scope', [{
+      id: 'WO-01',
+      writePaths: ['src/api/handler.go'],
+      impactRadius: '[src/api/testdata/handler.golden, tests/contract/enum_lock_test.go]',
+    }]);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery' });
+    assertResult(
+      'an impact-radius path outside the write scope is caught',
+      run(packageDir),
+      1,
+      'outside allowed_write_paths',
+    );
+  }
+
+  {
+    const { packageDir } = makeRepository('impact-radius-covered', [{
+      id: 'WO-01',
+      writePaths: ['src/api/**', 'tests/contract/enum_lock_test.go'],
+      impactRadius: '[src/api/testdata/handler.golden, tests/contract/enum_lock_test.go]',
+    }]);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery' });
+    assertResult('an impact radius inside the write scope passes', run(packageDir), 0);
+  }
+
+  {
+    const { packageDir } = makeRepository('impact-radius-undeclared', [{ id: 'WO-01' }]);
+    writeFileSync(
+      join(packageDir, 'workorders', 'WO-01.md'),
+      readFileSync(join(packageDir, 'workorders', 'WO-01.md'), 'utf8').replace(/^impact_radius: \[\]\n/m, ''),
+    );
+    assertResult('an undeclared impact radius is surfaced', run(packageDir), 0, 'declares no `impact_radius:` list');
+  }
+
   // --- Product-first measured by outcome -------------------------------------
 
   {
@@ -876,7 +1047,7 @@ wave_outcomes:
     );
   }
 
-  console.log('aird-validate tests: PASS (58 cases)');
+  console.log('aird-validate tests: PASS (72 cases)');
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

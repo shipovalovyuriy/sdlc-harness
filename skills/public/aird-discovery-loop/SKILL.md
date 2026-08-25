@@ -11,13 +11,17 @@ Run this as the main-session orchestration skill. The main session owns the loop
 
 Explicit invocation of this skill counts as an explicit request for delegation and parallel agent work: its spawning instructions have priority over the general no-delegation rule in `AGENTS.md`. Do not ask the user for permission before each spawn.
 
-The same token model as `$aird-delivery-loop` applies: **no long-lived all-remembering orchestrator.** Everything durable lives in the package files; the orchestrator context is a disposable working buffer, and a fresh session must be able to continue from `STATE.md`, `00-discussion-log.md`, and—after wave acceptance—`REVIEW-MANIFEST.json`.
+The same token model as `$aird-delivery-loop` applies: **no long-lived all-remembering orchestrator.** Everything durable lives in the package files; the orchestrator context is a disposable working buffer, and a fresh session must be able to continue from `STATE.md`, `00-discussion-log.md`, and—after wave acceptance—`REVIEW-MANIFEST.json`. Proactively hand the root task over after six bounded phases/slices or at about 70% context, whichever comes first; write `.continue-here.md` before ending the current root task.
 
 - **Phase boundaries are checkpoints.** After each discovery phase (intake, discussion, recon, product/UX, risks, TRD, plan), write the outcome into the package and `STATE.md`. 
 - **The orchestrator holds decisions, not bulk.** Subagents (`explorer`, `product-analyst`, `architect`, `risk-analyst`, `uiux-designer`) read sources and write package files directly; they return verdicts, key facts, and paths — not transcripts or file dumps. The orchestrator's working memory is the running decision table plus `STATE.md`, not the docs' contents.
 - **Runtime probing is explorer work.** ssh, kubectl, curl, deploy checks, and log reading during reconnaissance run inside a scoped `explorer` (or a dedicated recon subagent) whose findings land in `codemap.md`/AIRD docs as evidence pointers. The main session never accumulates raw remote output.
+- **Command output is bounded at the source.** Redirect raw output from every
+  variable-size search, probe, typecheck, test, or build to evidence. Return
+  only a counter or `tail -N`; never pour raw output into the orchestrator and
+  trim it afterwards.
 
-Use `references/gates.md` for gate behavior, `references/interview.md` for the discussion-gate questioning protocol (one decision at a time, A/B/C/D + recommendation, Normal/Grill), and `references/delivery-contract.md` as the canonical readiness/workorder contract. Maintain a small `STATE.md` after every meaningful phase transition; generated readiness belongs in `REVIEW-MANIFEST.json`, not duplicated prose.
+Use `references/gates.md` for gate behavior, `references/interview.md` for the discussion-gate questioning protocol (one decision at a time, A/B/C/D + recommendation, Normal/Grill), `references/delivery-contract.md` as the canonical readiness/workorder contract, and `references/process-metrics.md` for the end-of-loop metrics and improvement phase. Maintain a small `STATE.md` after every meaningful phase transition; generated readiness belongs in `REVIEW-MANIFEST.json`, not duplicated prose.
 
 Default output path:
 
@@ -45,6 +49,34 @@ Scale the package to the task. The full set is the ceiling, not a mandate for ev
 - Small, low-risk features: keep each document concise (a short PRD, a few risk lines, a lean TRD) rather than merging files. `$aird-delivery-loop` reads `01-prd.md`, `03-risk-register.md`, `04-trd.md`, `07-implementation-plan.md`, `08-quality-gates.md`, and `09-dod.md` by name, so keep those filenames even when their content is minimal. Concise is fine; shallow is not. Note the reduced scope in `STATE.md`.
 
 This keeps discovery aligned with the `AGENTS.md` "keep it simple / minimum viable output" principle instead of generating documents for their own sake.
+
+## Language And Clarity Standard
+
+Write every human-readable AIRD artifact, specification, decision record,
+status explanation, and user-facing report in clear Russian. This applies to
+the main orchestrator and every discovery subagent. Repeat this requirement in
+every subagent prompt that can create or edit AIRD text.
+
+- Prefer ordinary Russian terms over unexplained English terminology. Write,
+  for example, «требования к продукту», «техническое решение», «программный
+  интерфейс», «пользовательский интерфейс», «критерии готовности», «рабочее
+  задание», and «проверка» in prose instead of relying only on PRD, TRD, API,
+  UI/UX, DoD, workorder, or gate.
+- Spell out and explain every necessary abbreviation or borrowed term on first
+  use. After that, a short form is allowed only when it cannot confuse the
+  reader.
+- Explain the behavior as a cause-and-effect sequence: who acts, what the
+  system does, what data changes, what the user sees, and what happens on an
+  error. Do not hide meaning behind labels or lists of filenames.
+- Preserve exact filenames, source identifiers, schema/frontmatter keys,
+  commands, protocol names, third-party product names, and raw log fragments
+  when changing them would break a contract. Accompany them with a plain
+  Russian explanation. This is a documentation-language rule, not a request to
+  translate source-code identifiers or localize the product itself.
+- Apply this especially to interview questions: every option and recommendation
+  must be understandable to a business owner without unexplained abbreviations
+  or English jargon. State the practical consequence before any exact technical
+  term.
 
 ## Documentation Depth Standard
 
@@ -98,13 +130,22 @@ Create or update `00-discussion-log.md` from `assets/templates/discussion-log.md
 - explicit non-goals and "must not" constraints;
 - questions that remain open.
 
-Use a discussion gate when user input would change product scope, UX flow, API shape, data model, rollout risk, or quality gates. Run it as a **one-decision-at-a-time interview** — see `references/interview.md` for the protocol: closed A/B/C/D questions each carrying a recommended default, highest-impact decision first, codebase-first (skip what the repo already decides), and Normal/Grill modes. Do not dump a batch of questions — each answer decides the next one, and a running summary table keeps the user oriented.
+Use a discussion gate when user input would change business value, target users,
+product scope, adoption, success measurement, user flow, interface shape, data
+model, rollout risk, or quality gates. Run it as a **one-decision-at-a-time
+interview** — see `references/interview.md`. There is no numeric question cap:
+ask every material business/product question, then every technical question that
+cannot be safely defaulted. Closed A/B/C/D questions each carry a recommended
+default; do not dump a batch. Each answer decides the next question, and a
+running summary table keeps the user oriented.
 
 #### Risk-Driven Questions And Mitigations
 
 Run risk analysis inside the discussion gate, not only after the PRD/TRD are drafted. Use `risk-analyst` when available; load `rat` for riskiest assumptions and `rca` when the request is driven by an incident, regression, recurring defect, or process failure.
 
-Ask `risk-analyst` for a short ranked list of risk-driven decisions that need user input before the design can be trusted. It must produce questions, not a standalone report:
+Ask `risk-analyst` for a ranked, business-first list of risk-driven decisions
+that need user input before the design can be trusted. It must produce
+questions, not a standalone report:
 
 - risk or assumption;
 - why it matters;
@@ -321,7 +362,7 @@ its own result is the narrowing this gate exists to stop.
 - at most **one** executable workorder in the package — the spike that runs the
   probe — and it owns wave `W1` alone;
 - `status: ready_for_delivery` only for that spike-only wave;
-- semantic review may **not** accept the assumption conditionally. "Accepted,
+- the final combined review may **not** accept the assumption conditionally. "Accepted,
   pending confirmation" is exactly the verdict that produced the failure this
   gate prevents. The only acceptable outcomes are: proven, or a spike-only wave.
 
@@ -556,7 +597,7 @@ Each workorder must be independently executable and include:
 
 - V4 frontmatter from `references/delivery-contract.md`, including `kind`,
   `wave`, `surface`, `work_class`, `runtime_profiles`, non-empty bounded
-  `allowed_write_paths`, and section-level `docs_to_read`;
+  `allowed_write_paths`, `impact_radius`, and section-level `docs_to_read`;
 - objective;
 - task breakdown (1–3 atomic tasks, per the sizing rule above);
 - a `## Consumes` table (or an explicit `None.`);
@@ -569,13 +610,109 @@ Each workorder must be independently executable and include:
 - acceptance criteria;
 - verification steps;
 - recommended agent role.
+- a `## Shared Error And Public Wiring Pre-flight` section with a bounded
+  search command and explicit results for the service-wide error mapper and
+  public route/export/registration root (use a reasoned `not applicable` only
+  when the slice exposes neither error nor public runtime behavior).
 
 Workorders are the final test of AIRD depth. A delivery agent must be able to start with only the workorder and listed AIRD docs, then know exactly what to read, what to change, what not to change, and how to prove success. If a workorder still requires the parent conversation or asks the worker to decide architecture, return to discovery instead of starting delivery.
 
-#### Deterministic Validation And One Semantic Review
+**Impact radius is decided here, not in delivery.** For every workorder that
+changes a contract — an enum, a schema, a constant, a response shape, a public
+signature — run one bounded search from the symbols it touches and enumerate
+what locks them: consumer tests, snapshots and goldens, fixtures, generated
+expectations, count/enum locks. Put those paths in `impact_radius` and inside
+`allowed_write_paths`; `aird-validate.mjs` fails the workorder when a listed
+path falls outside the write scope, because an executor cannot update what it
+may not write. `impact_radius: []` is a valid answer when the slice genuinely
+locks nothing, but it must be an answer, not an omission.
 
-Run the validator with `--strict` while `STATE.md` is still `discovery`, before
-semantic review:
+This is the cheapest gate in the package. The alternative is the ordinary
+delivery failure: a worker changes an enum, the snapshot test three directories
+away was never in scope, and a whole fix cycle pays for a search that would
+have cost one command here.
+
+**Check shared error handling and public wiring before freezing scope.** For
+every workorder that introduces or reclassifies an error, response, endpoint,
+handler, method, job, or public API surface, run one bounded `rg`/`git grep`
+from the service root and record the command plus result in the workorder:
+
+- inspect the common service error renderer/mapper and include its path in
+  `impact_radius` and `allowed_write_paths` when the accepted response mapping
+  must change;
+- inspect the route, export, dependency-injection, command, or handler
+  registration root and include its path when the new method must be exposed;
+- end the visible search result with `rg -c`, a tool-native count, or
+  `tail -N`; store raw matches under package `evidence/`.
+
+This is a discovery contract check, not a delivery repair. The strict validator
+requires the section and its four fixed fields before review; the final combined
+review verifies that `not applicable` claims are consistent with the workorder.
+
+#### Hard Review Budget And Finding Cutoff
+
+Discovery has exactly one reviewer-agent surface: one broad combined review at
+the end of discovery, immediately before `accept-wave`. It covers the target
+wave and the whole package in one call. Do not spawn reviewer agents during
+intake, discussion, reconnaissance, product/UX work, risk analysis, technical
+design, prototyping, or workorder drafting.
+
+This is a hard token/time budget, not a recommended default. Do not add separate
+"semantic", "technical risk", "architecture sanity", "security sanity", "UX
+sanity", "integrity", "closure", or "final sanity" rounds. Specialist agents
+may author bounded artifacts or execute scoped gates while discovery is in
+progress, but they must not inspect the completed package for findings.
+
+The budget is contract data, not a note. Before spawning the review, increment
+`review_calls_used` in `STATE.md` frontmatter; when its response returns, set
+`finding_cutoff: sealed`. `aird-validate.mjs` rejects a second call and refuses
+readiness while the window is open — the same reason blockers moved out of
+prose, since a ledger nobody enforces stops nothing.
+
+The final reviewer reads the whole package and checks semantics plus the fixed
+integrity checklist below in the same response. It must emit every blocking
+finding it can support, with a specific closure criterion and a runnable
+evidence command. Register each one in the `findings:` frontmatter; a finding
+whose criterion nobody can execute is a rubber stamp, because the orchestrator
+that writes the fix is the same one that judges it.
+
+**The reviewer must also report its coverage** — which workorders and documents
+it actually read — and the orchestrator records it as `review_coverage:
+complete` or `partial`. This is the real failure mode of a one-shot
+whole-package review: not a wrong opinion, but a pass that ran out of context
+and silently inspected 60% of the package. `partial` earns exactly one
+continuation of that same pass over the unread remainder, counted as the same
+call. It is not a licence to open a new opinion round, and readiness stays
+blocked until coverage is `complete`.
+
+When the response returns, the finding-registration window is sealed. Do not
+call the reviewer again to inspect fixes, and do not let a closure check search
+unrelated files or create new findings.
+
+The main orchestrator closes the registered IDs in one batch by checking only:
+
+- the changed diff against the finding's original closure criterion;
+- the named deterministic command or evidence; and
+- strict validator output when the finding is structural.
+
+A newly noticed non-critical issue after the cutoff is deferred to a later wave
+or backlog and cannot block the current `accept-wave`. The only exceptions are
+concrete evidence of a critical exploitable security exposure or irreversible
+data loss/corruption introduced by the closure diff. Record that exception in
+`STATE.md`, stop, and ask the user whether to reopen discovery or defer the
+change. Never spawn another reviewer automatically.
+
+Retries caused by tool failure are allowed only when the failed call produced
+no usable verdict or findings. A reviewer disagreement, a new opinion, or a
+desire for extra confidence does not reset the budget. A later wave that changes
+contracts earns one new final combined review only when that wave itself reaches
+the end of discovery; unchanged accepted hashes are never reviewed again.
+
+#### Deterministic Validation And Final Combined Review
+
+Run the validator with `--strict` while `STATE.md` is still `discovery`, after
+all discovery artifacts and target-wave workorders are drafted but before the
+single final combined review:
 
 ```bash
 node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-validate.mjs" \
@@ -587,23 +724,29 @@ closure are warnings by design, and before the first `accept-wave` *every*
 workorder is outside a closure — so a bare run reports `PASS` on a structurally
 broken package. Strict mode promotes those warnings to failures.
 
-Fix structural errors without opening a review loop. Then run one semantic
-review for the earliest dependency-ready wave. Use monotonic finding IDs
-(`F-0001`, `F-0002`, ...). A finding-closure review sees only the changed
-workorders and open IDs; it may add a new blocker only when the changed diff or
-an advanced target base caused it.
+The validator also prints `waveDigest`, containing each accepted wave's
+surface, dependencies, write scope, impact radius, and runtime profiles. Treat
+that digest as the delivery pre-flight index; do not add a second hand-built
+frontmatter summary to `STATE.md`.
 
-#### Whole-package integrity pass (before `accept-wave`)
+Before starting the single final combined reviewer, post a **structured review
+plan** directly in chat using `assets/templates/final-review-plan.md`. This is
+the user-readable synthesis of the completed discovery phases, not a directory
+listing and not raw workorder frontmatter. It explains the business goal,
+end-to-end behavior, fixed decisions, implementation waves, verification plan,
+material risks, and exactly what the final review will challenge. Write it in
+plain Russian without unexplained abbreviations or English jargon. This is a
+routine checkpoint, not a new approval gate: incorporate any correction the
+user provides; otherwise continue to the already-authorized final review.
 
-Closure reviews are narrow by design — they see the changed workorders and the
-open finding IDs, nothing else. That is correct for iteration and useless for
-systemic gaps: an ontology every workorder references and none produces, a
-capability used in an authorization matrix but missing from the capability list,
-a risk ID cited in the PRD that the register never defined. No closure reviewer
-can see any of those, so they survive to delivery.
+Fix structural errors without opening a review loop. Do not invoke a reviewer
+yet. Once every artifact for the target wave is final and strict validation
+passes, run the one broad combined review. Use monotonic finding IDs (`F-0001`,
+`F-0002`, ...), seal the finding window when its response returns, and close all
+IDs in one orchestrator-owned batch. Do not run a finding-closure reviewer.
 
-Run exactly one integrity pass over the whole package, after findings are closed
-and before `accept-wave`. It is a fixed checklist, not another opinion round:
+The combined review checks the wave's semantics and this whole-package
+integrity checklist in the same call:
 
 1. **Reference integrity.** Every `R-`, `G-`, `DOD-`, and `WO-` ID cited in any
    document resolves to a definition. The validator checks this; read its output
@@ -623,13 +766,18 @@ and before `accept-wave`. It is a fixed checklist, not another opinion round:
 5. **Blocker reality.** Every `STATE.md` blocker has an owner, the waves it
    blocks, and a resolution action — and none of them blocks a wave you are
    about to accept.
+6. **Shared handler and public wiring closure.** Every workorder that changes
+   an error or public runtime surface inspected the service-wide error mapper
+   and route/export/registration root; every needed integration path is inside
+   both `impact_radius` and `allowed_write_paths`.
 
-Findings here are ordinary blocking findings with new `F-` IDs. This pass runs
-once per package, not once per wave; later waves inherit it unless they
-introduce new contracts.
+These are the final allowed blocking `F-` IDs. Each must name its deterministic
+closure criterion in the same response. Seal the package finding cutoff when
+the combined review returns and close those IDs in one orchestrator-owned batch
+without another reviewer call.
 
-After the reviewer accepts the wave, fetch the target base again and record the
-acceptance:
+After all registered findings meet their original closure criteria, fetch the
+target base again and record the acceptance:
 
 ```bash
 node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-contract.mjs" \
@@ -638,10 +786,78 @@ node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/script
 
 Use the actual target ref and wave. This command fails on a stale/diverged
 branch and writes `REVIEW-MANIFEST.json` with per-workorder hashes. If a base or
-workorder changes, re-review only the invalidated wave. Do not semantically
-review the same unchanged hash again during delivery.
+workorder contract changes, run one final combined review only when the
+invalidated wave is again complete. Do not review the same unchanged hash again
+during delivery.
 
-Use `assets/templates/state.md`, `assets/templates/aird-package.md`, `assets/templates/discussion-log.md`, `assets/templates/ui-spec.md`, `assets/templates/ui-prototype.md`, `assets/templates/workorder.md`, and `assets/templates/continue-here.md` when creating artifacts or pausing.
+Use `assets/templates/state.md`, `assets/templates/aird-package.md`, `assets/templates/discussion-log.md`, `assets/templates/ui-spec.md`, `assets/templates/ui-prototype.md`, `assets/templates/workorder.md`, `assets/templates/final-review-plan.md`, `assets/templates/discovery-summary.md`, and `assets/templates/continue-here.md` when creating artifacts or pausing.
+
+## Mandatory Discovery Summary
+
+After the package, final combined review, finding closure, and accepted-wave
+manifest are complete, create `DISCOVERY-SUMMARY.md` from
+`assets/templates/discovery-summary.md`. This is the user's independent audit
+document, not a short handoff note and not a list of links. It must be written
+in clear Russian under the Language And Clarity Standard and must remain useful
+to a reader who has not seen the conversation or the other AIRD files.
+
+The summary must explain, in one coherent description:
+
+1. the goal, user-visible result, scope, and explicit non-goals;
+2. the complete end-to-end operating sequence, from the initiating action to
+   the final observable result, including actors, system steps, data/state
+   changes, synchronous or asynchronous boundaries, failure paths, retries,
+   fallbacks, and rollback where relevant;
+3. the responsibilities of every affected component, service, module, storage
+   system, and external dependency, and how they interact;
+4. the fixed interfaces, data structures, migrations, compatibility rules,
+   permissions, security controls, observability, rollout, and recovery model;
+5. every load-bearing architectural decision: what was chosen, why, which
+   serious alternatives were rejected, and what consequence the choice has;
+6. the user flow and interface states for user-facing work;
+7. material risks and assumptions, the evidence collected for them, and what
+   remains uncertain;
+8. the implementation sequence by waves and workorders, with dependencies and
+   the concrete result of each stage;
+9. how quality gates and completion criteria will prove that the delivered
+   behavior is correct;
+10. blockers, deferred work, and an explicit verdict on whether delivery may
+    start.
+
+Reconcile the summary against the source artifacts before publishing it. It
+must introduce no new decision and must cite the exact AIRD file or workorder
+for details that a delivery agent will need. A terse bullet list, a directory
+listing, or a path-only response does not satisfy this gate.
+
+## Process Metrics And Loop Improvement
+
+After `accept-wave` succeeds and `DISCOVERY-SUMMARY.md` is written — before the
+final response — run the end-of-loop improvement phase from
+`references/process-metrics.md`:
+
+1. Write the discovery metrics record to
+   `.agent/aird/<feature-slug>/metrics/discovery.json` using the canonical
+   schema (`kind: discovery`; `runtime` names the runtime actually executing
+   this loop — `claude` or `codex`). Collect only from package
+   artifacts, `STATE.md` frontmatter, validator output, and the current run's
+   own phase log; a value you cannot derive is `null`, never an estimate.
+2. Append the same record as one line to `~/.agent/aird-metrics/history.jsonl`.
+3. Compare against previous runs (`tail -n 20`, same kind; same profile when
+   at least 3 records share it) and evaluate the discovery signals defined in
+   the contract. Delivery-reported package defects (`discovery_defects` in
+   delivery records) are **this loop's** lagging quality measure — read them
+   during the comparison.
+4. A systemic signal (fired in this run and in a compared previous run, or any
+   ⚠-signal) must append a proposal to
+   `~/.agent/aird-metrics/improvement-backlog.md`; a first-time signal becomes
+   a watch item. Deduplicate against existing entries. Never edit skill files,
+   references, templates, or validator scripts yourself — proposals wait for
+   an explicit user decision, and an accepted proposal is applied to both the
+   Claude and Codex skill copies with its eval case per the contract.
+
+The phase is bounded — a few compound bash commands, no subagents, no reviewer
+calls — and it never blocks readiness: if the store is unreadable, record what
+you can, note the skip in the final response, and continue.
 
 ## Loop Exit Criteria
 
@@ -651,6 +867,9 @@ meets all of these conditions:
 - every risk listed in `existential_risks` is `proven`, with a probe evidence file that exercised the real production path (a spike-only wave is the one exception, and it may contain nothing but the spike);
 - every proven risk names its `real_boundaries`, declares `faked_boundaries` (`[]` counts, and asserts nothing was substituted), and has a `claim_locked_at` older than its probe evidence;
 - intake, discussion log, PRD, risk register, TRD, implementation plan, quality gates, and DoD exist;
+- `DISCOVERY-SUMMARY.md` exists, is consistent with the accepted package, and
+  gives the user the complete Russian-language process and architecture audit
+  required by the Mandatory Discovery Summary;
 - UX framing and UI spec exist for user-facing UI, dashboards, forms, workflows, or visual changes;
 - UI prototype notes and mock-state acceptance exist for user-facing UI, dashboards, forms, workflows, or visual changes;
 - UI spec/prototype cite the current design system and application evidence,
@@ -664,7 +883,9 @@ meets all of these conditions:
 - `STATE.md` declares structured `blockers:`; none is unresolved with `needs_user_decision: true`, and none blocks the accepted wave;
 - a `deep` package states non-functional targets (scale, latency/performance budget, cost) or records why they do not apply;
 - UX artifacts are `accepted` only when a workorder exists that can consume them; otherwise they stay `reviewing` so they do not go stale waiting for a blocked wave;
-- the whole-package integrity pass ran and its findings are closed;
+- the single final combined review covered semantic and whole-package integrity,
+  its finding cutoff is sealed, and its registered findings are deterministically
+  closed without another reviewer;
 - API/data/model changes are explicit;
 - quality gates are mapped to the DoD;
 - documentation passes the depth standard: key docs record decisions, rationale, evidence, rejected alternatives, assumptions, and delivery implications proportional to risk;
@@ -688,7 +909,7 @@ node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/script
 The validator proves structure, typed routing, sizing, write-scope collisions,
 the dependency graph, risk/gate/DoD wiring, Gate→DoD coverage, the product-first
 detour budget, profile budgets, accepted hashes, and Git-base freshness. It does
-not replace the one semantic discovery review.
+not replace the one final combined discovery review.
 
 If these conditions are not met, run another scoped discovery loop instead of starting implementation. Cap discovery at 3 iterations; if conditions still are not met after the third, escalate to the user with the remaining gaps and a recommended default rather than looping again.
 
@@ -717,11 +938,25 @@ because an API contract changed is the same waste in the opposite direction.
 
 ## Final Response
 
-Summarize:
+Write the final response in clear Russian. Present the full substantive content
+of `DISCOVERY-SUMMARY.md` directly in the response: the complete operating
+sequence, component interactions, fixed architectural decisions and rejected
+alternatives, implementation order, verification approach, risks, assumptions,
+blockers, and the delivery-readiness verdict. Also provide the AIRD path and the
+path to `DISCOVERY-SUMMARY.md` for reference.
 
-- AIRD path;
-- agents used and scopes;
-- highest risks;
-- workorders created;
-- whether delivery can start;
-- any blockers or assumptions.
+Structure the response as the updated review plan the user saw before the final
+review: what and why, end-to-end flow, fixed business and technical decisions,
+implementation waves, proof of readiness, risks/open items, and the final
+delivery verdict. Incorporate the final review's closed findings without
+reprinting raw reviewer output.
+
+Do not replace this explanation with a terse list of agents, workorders, or
+file links. Avoid unexplained abbreviations and English terminology; retain an
+exact technical term only when needed and explain it in Russian on first use.
+
+End the response with the «Улучшение процесса» block required by
+`references/process-metrics.md`: the few metrics most worth attention with
+their comparison against previous AIRD runs, fired signals, and the generated
+proposals that need a user decision — or an explicit «системных отклонений
+нет».

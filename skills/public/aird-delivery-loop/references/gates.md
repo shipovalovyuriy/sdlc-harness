@@ -4,7 +4,7 @@ Use gate types to make delivery decisions predictable.
 
 | Gate | Purpose | Failure behavior |
 |---|---|---|
-| Implementation readiness | Validate `ready_for_implementation`, V4 sizing, product-first order, write scopes, and verification plans before workers start. Readiness fields and statuses are defined in `../aird-discovery-loop/references/delivery-contract.md`. | Block implementation only for an unsafe or underspecified product contract. Missing runtime access/fixtures blocks later verification, not this gate. |
+| Implementation readiness | Validate `ready_for_implementation`, V4 sizing, product-first order, write scopes, and verification plans before implementation starts. Before any worker spawn, also prove one of the two spawn justifications: actual parallelism between large, dependency-ready slices with disjoint write sets, or orchestrator context at/above 60% with substantive work left. Readiness fields and statuses are defined in `../aird-discovery-loop/references/delivery-contract.md`. | Block implementation only for an unsafe or underspecified product contract. Missing runtime access/fixtures blocks later verification, not this gate. With neither justification met, the work routes to the orchestrator instead of blocking. |
 | Runtime-verification readiness | Validate actual environment, credentials, dependencies, and fixtures before runtime gates. | Preserve implementation completion; block runtime verification and release. |
 | Product-first / detour | Keep the first wave on the product slice and supporting work inside one small workorder / 20 percent, routed by `work_class`, with the accepted wave naming a user-observable outcome and a PRD persona. | Block the supporting spawn or package until explicit user approval recorded as `supporting_detour_approved: true`, or `platform_slice_approved: true` for a wave whose outcome is an internal API/tool surface. Enforced by `aird-validate.mjs`; the budget is defined in `../aird-discovery-loop/references/delivery-contract.md`. |
 | Release readiness | Validate all required evidence before completion. | Keep `ready_for_release: blocked` and prevent `complete`. |
@@ -15,7 +15,9 @@ Use gate types to make delivery decisions predictable.
 
 Selection rule:
 
-- Use implementation readiness before spawning product workers.
+- Use implementation readiness before product implementation, and apply the
+  two-justification spawn rule (actual parallelism, or 60% orchestrator context
+  with substantive work left) before every implementation-worker spawn.
 - Use product-first/detour before every supporting spawn or package creation.
 - Use runtime-verification readiness before backend/browser runtime gates.
 - Use release readiness before `ready_for_release` or `complete`.

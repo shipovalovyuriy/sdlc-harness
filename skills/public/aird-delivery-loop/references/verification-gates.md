@@ -8,14 +8,14 @@ See `references/gates.md` for the gate taxonomy (pre-flight / revision /
 escalation / abort). The table below lists required gate types by change
 category; it does not imply that every gate runs after every workorder. Use the
 delivery skill's Review Scheduling Policy: reviewer and QA run once after an
-integrated wave, while workers run targeted tests after their own work. Never
+integrated wave, while each slice implementer runs targeted tests after its own work. Never
 run a per-workorder reviewer. Stronger project gates may add test, runtime,
 security, or QA depth at the wave boundary, but do not change review cadence.
 
 | Change type | Required gates |
 |---|---|
-| Backend/API/data | targeted tests per worker; mandatory production-equivalent runtime integration and business-flow smoke with zero skips; reviewer and QA integration checks at the wave boundary |
-| Frontend behavior | tests/build per worker; reviewer, QA, and browser verification at the wave boundary |
+| Backend/API/data | targeted tests per implementation slice; mandatory production-equivalent runtime integration and business-flow smoke with zero skips; reviewer and QA integration checks at the wave boundary |
+| Frontend behavior | tests/build per implementation slice; reviewer, QA, and browser verification at the wave boundary |
 | Visual/UI/UX | browser verification, usability check (see routing below), QA |
 | Auth/permissions/secrets | tests; cybersec, reviewer, and QA negative paths at the wave boundary |
 | Migration/schema | fresh install plus previous-release upgrade with representative data, immutable-history check, idempotent reopen, rollback/fix-forward check, reviewer at the wave boundary |

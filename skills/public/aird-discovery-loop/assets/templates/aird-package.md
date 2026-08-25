@@ -2,12 +2,21 @@
 
 Use this template as the target artifact set under `.agent/aird/<feature-slug>/`.
 
+Write the human-readable content of every generated artifact in clear Russian.
+Use Russian headings where they are not machine-parsed. Preserve exact
+filenames, frontmatter/schema keys, required validator headings, source
+identifiers, commands, and third-party names; explain every necessary
+abbreviation or borrowed term in Russian on first use.
+
 ## Root Files
 
 - `STATE.md` - living status, active phase, blockers, next action.
 - `REVIEW-MANIFEST.json` - generated target-base provenance, accepted waves,
   and accepted workorder hashes. Never hand-edit readiness mirrors elsewhere.
 - `.continue-here.md` - transient resume note when paused or blocked.
+- `DISCOVERY-SUMMARY.md` - detailed Russian-language explanation of the full
+  operating sequence, component interactions, architectural decisions,
+  implementation order, verification, risks, and delivery-readiness verdict.
 - `codemap.md` - hierarchical map of the change-relevant code; agents work from it (non-trivial changes).
 - `codebase/` - optional deeper current-state map for broad or unfamiliar codebases.
 - `prototype/` - optional UI mock stand for user-facing work.

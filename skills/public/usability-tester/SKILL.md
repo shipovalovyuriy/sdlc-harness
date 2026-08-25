@@ -35,7 +35,7 @@ If the user asks for a quick test, still collect actor, environment, tasks, and 
 
 ## Test Execution
 
-Use `mcp__computer_use__get_app_state` once at the start of each assistant turn before interacting with the target app. Continue with Computer Use actions only after the app state is visible.
+Establish the app state once at the start of each assistant turn before interacting with the target app: request access to the applications you need, then take a screenshot. Continue with Computer Use actions only after the app state is visible. Tool names vary by runtime — discover the available Computer Use tools rather than assuming a fixed name, and if none are present, say so and stop instead of narrating an interaction you did not perform.
 
 Act like the defined human participant:
 

@@ -15,12 +15,19 @@ Store as `fix-workorders/F-NNNN.md`, never under discovery's immutable
 - Contract/DoD deviation:
 - Evidence:
 
-## Subagent Context Package
+## Executor Context Package
 
-The fixer starts from a fresh context and receives paths, never the parent
-transcript. Spawn it with `fork_turns: "none"` and the selected role `agent_type`.
+The orchestrator is the default executor, for mechanical and non-mechanical
+fixes alike. Choose `fresh-worker` only under one of the two spawn
+justifications: this group is a large independent slice running concurrently
+with another dependency-ready slice, or the orchestrator is at/above 60%
+context with substantive work left. A production-behavior, security, contract,
+or specialist-judgment fix raises review depth, not routing. Pass paths, never
+the parent transcript, and spawn with `fork_turns: "none"`.
 
-- Selected role `agent_type`:
+- Execution mode (`orchestrator-local` / `fresh-worker`):
+- Spawn justification (`parallelism` / `context-headroom` / n/a):
+- Selected role `agent_type` (fresh-worker only):
 - Exact fix workorder path to pass:
 - Exact AIRD doc paths to pass:
 - Exact code-review standards refs to pass:
@@ -29,13 +36,13 @@ transcript. Spawn it with `fork_turns: "none"` and the selected role `agent_type
 
 ## Task Breakdown
 
-Sizing rule: 1–3 atomic tasks max; a fix workorder is the smallest change that resolves the finding, in one fresh worker context. If the fix is bigger than that, it is not a fix — split it or route back to discovery.
+Sizing rule: 1–3 atomic tasks max; a fix workorder is the smallest change that resolves the finding in one bounded executor context. If it is bigger, split it or route back to discovery.
 
 1. 
 
 ## Fix Scope
 
-- Recommended agent:
+- Recommended executor / role:
 - Allowed read paths:
 - Allowed write paths:
 - Allowed commands:
@@ -61,4 +68,7 @@ Sizing rule: 1–3 atomic tasks max; a fix workorder is the smallest change that
 
 ## Reporting
 
-Report changed files, tests run, and whether the original finding is resolved. Never return empty; if blocked, report the blocker and reason explicitly — a silent or vacuous result is treated as a failure, not a fix.
+Return exactly six one-line fields: `status`, `paths`, `commands` with exit
+codes, `numbers` as an evidence-section pointer, `evidence`, and `blockers`.
+Never add a table or seventh field. Detailed results and numeric values belong
+in evidence. A silent or vacuous result is a failure, not a fix.

@@ -1,6 +1,6 @@
 ---
 name: code-review-standards
-description: Standards-backed code review and implementation guidance for reviewer, backend-worker, frontend-worker, and worker agents. Use when reviewing code, preparing to implement code from a workorder, checking diffs against language/framework best practices, or producing review findings with evidence. Covers universal review rules, project structure, function design, reuse, optimization, community Awesome List discovery, plus Go, TypeScript/React, Python, Java, Kotlin, Rust, C#, C++, backend, frontend, API, testing, and security references.
+description: Standards-backed code review and implementation guidance for reviewer, backend-worker, frontend-worker, and worker agents. Use when reviewing code, preparing to implement code from a workorder, checking diffs against language/framework best practices, or producing review findings with evidence. Covers universal review rules, the build-less ladder for minimal diffs and over-engineering findings, project structure, function design, reuse, optimization, community Awesome List discovery, plus Go, TypeScript/React, Python, Java, Kotlin, Rust, C#, C++, backend, frontend, API, testing, and security references.
 ---
 
 # Code Review Standards
@@ -47,11 +47,12 @@ When coding as `backend-worker`, `frontend-worker`, or `worker`:
 1. Read the workorder and required AIRD docs.
 2. Read `references/universal.md`, `references/structure-reuse-performance.md`, plus the stack references from Routing.
 3. Identify project-local conventions and tooling configs before editing.
-4. Decide where the code belongs, what existing functions/types/hooks/services to reuse, and whether optimization is required by the workorder or current code path.
-5. If adding a tool, dependency, linter, formatter, SAST check, or major library, consult `references/community-awesome.md` as discovery and then verify the chosen tool from primary sources.
-6. Implement the smallest scoped change.
-7. Run the workorder's required checks.
-8. Report changed files, commands run, standards-sensitive decisions, reuse/structure choices, and blockers.
+4. Climb the Build-Less Ladder in `references/structure-reuse-performance.md` before writing: skip, reuse what is already here, standard library, native platform feature, already-installed dependency, one line, then minimum code.
+5. Decide where the code belongs, what existing functions/types/hooks/services to reuse, and whether optimization is required by the workorder or current code path.
+6. If adding a tool, dependency, linter, formatter, SAST check, or major library, consult `references/community-awesome.md` as discovery and then verify the chosen tool from primary sources.
+7. Implement the smallest scoped change.
+8. Run the workorder's required checks.
+9. Report changed files, commands run, standards-sensitive decisions, reuse/structure choices, and blockers.
 
 If the workorder conflicts with the standards or project conventions, stop and report the conflict instead of silently choosing a new design.
 
@@ -64,7 +65,8 @@ When reviewing:
 3. Cite the file/line, the violated local convention or standards principle, and the behavioral risk.
 4. Avoid style-only comments already enforced by formatter/linter unless the tooling is missing or misconfigured.
 5. Check structure, function boundaries, reuse, duplication, and optimization before style comments.
-6. Use `community-awesome.md` only to suggest missing tooling or alternatives; do not treat community curation as a pass/fail rule.
-7. Mark a finding blocking only when it can affect correctness, security, data integrity, compatibility, reliability, UX/accessibility, test validity, maintainability, or performance of the delivered change.
+6. Run an over-engineering pass against the Build-Less Ladder and name what to cut: reinvented standard library, a dependency doing what the platform already does, an abstraction with one implementation, config nobody sets, dead flexibility, or the same logic in fewer lines. One line per finding: location, what to cut, what replaces it. Say the diff is already lean when there is nothing to cut, and never flag a required test or a single smoke check as bloat.
+7. Use `community-awesome.md` only to suggest missing tooling or alternatives; do not treat community curation as a pass/fail rule.
+8. Mark a finding blocking only when it can affect correctness, security, data integrity, compatibility, reliability, UX/accessibility, test validity, maintainability, or performance of the delivered change.
 
 Use `assets/review-report.md` when a structured review artifact is needed.

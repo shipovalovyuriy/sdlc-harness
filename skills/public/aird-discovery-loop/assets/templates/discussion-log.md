@@ -16,7 +16,10 @@ Use this to keep discovery interactive and decision-backed.
 
 ## Questions Asked
 
-One row per user-facing question, asked one at a time (see `references/interview.md`). Normal mode stops when the important decisions are resolved and has a hard cap of 10 questions total; do not copy the unused candidate inventory here.
+One row per user-facing question, asked one at a time (see
+`references/interview.md`). There is no numeric limit: continue until every
+material business/product decision is answered, safely defaulted from evidence,
+or recorded as a blocker. Do not copy the unused candidate inventory here.
 
 | Question | Options | Recommended Default | User Decision | Rationale | Affects | Evidence needed |
 |---|---|---|---|---|---|---|

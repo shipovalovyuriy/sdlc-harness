@@ -17,6 +17,9 @@ platform_slice_approved: false
 active_phase: intake
 active_wave: none
 checkpoint_kind: routine
+# Number of bounded discovery phases/delivery slices completed by this root
+# session since the last fresh-task handoff. Hand over at 6 or ~70% context.
+root_slices_since_handoff: 0
 next_action: draft-intake
 updated_at: ''
 # Blockers are contract data, not prose. `blockers: []` is a valid answer and an
@@ -30,6 +33,27 @@ blockers: []
 #    owner: user
 #    needs_user_decision: true
 #    resolved: false
+# The review budget is contract data for the same reason blockers are: a ledger
+# written as prose stops neither a second review nor an unverifiable closure.
+# Discovery spends exactly one final combined reviewer call.
+review_calls_used: 0
+# open | sealed -- seal the moment the final review's response returns
+finding_cutoff: open
+# unverified | partial | complete -- what the final reviewer reported it read.
+# A one-shot whole-package review fails by running out of context, so partial
+# coverage earns one completion of the same pass, not a new opinion round.
+review_coverage: unverified
+# none | critical-security | irreversible-data-loss
+review_exception: none
+# Findings registered by the final combined review. The orchestrator closes its
+# own fixes, so every entry names the bar it will be judged against and a
+# command that can actually be run. `findings: []` is a valid answer.
+findings: []
+#  - id: F-0001
+#    statement: WO-03 consumes an ontology no workorder produces
+#    closure_criterion: WO-02 produces docs/ontology.yaml and WO-03 cites it
+#    evidence_command: node .../aird-validate.mjs .agent/aird/<slug> --strict
+#    closed: false
 ---
 
 # AIRD State
@@ -80,6 +104,13 @@ does not list.
 - Current execution wave:
 - Later draft waves:
 
+## Current Wave Slice Index
+
+During delivery, keep only the active wave's entries here. Each entry is copied
+from the delivery skill's `assets/templates/state-slice-entry.md` and is exactly
+eight non-empty lines. Before the first slice of a new wave, move older entries
+to `evidence/state-archive.md`; never retain prior-wave chronology in STATE.
+
 ## Delivery Evidence
 
 - `10-ui-verification.md`: produced during delivery for user-facing changes.
@@ -104,8 +135,19 @@ Both are delivery outputs; keep their rows `conditional` until delivery writes t
 - Documentation depth: pending / pass / blocked
 - Medium/high risks have mitigation owners and evidence gates: pending / pass / blocked
 - Earliest wave is executable without parent chat: pending / pass / blocked
-- Whole-package integrity pass: pending / pass / blocked
+- Final combined semantic + package-integrity review: pending / pass / blocked
 - Non-functional targets stated (deep profile): pending / pass / n/a
+
+## Review Budget
+
+Authoritative ledger is the `review_calls_used`, `finding_cutoff`,
+`review_coverage`, `review_exception`, and `findings:` frontmatter above;
+`aird-validate.mjs` enforces it. Use this section only for context the numbers
+cannot carry — why a retry was a tool failure rather than a second opinion, or
+what an `review_exception` covered.
+
+- Coverage reported by the final review (workorders and documents actually read):
+- Retry cause, if `review_calls_used` counts a re-run:
 
 ## Decisions
 

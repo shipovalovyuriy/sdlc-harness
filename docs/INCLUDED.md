@@ -1,57 +1,80 @@
 # Included Skills And Agents
 
-## Skills
+## Harness skills (`skills/public/`)
 
 ### `aird-discovery-loop`
 
-Interactive AIRD discovery loop for feature planning. It produces PRD/TRD/UI/risk/workorder artifacts and keeps risk discussion active with the user instead of silently drafting specs.
-
-Use it when you need to clarify business intent, UX, UI, technical plan, DoD, and quality gates before implementation.
+Interactive AIRD discovery loop for feature planning. It produces
+PRD/TRD/UI/risk/workorder artifacts, probes existential assumptions with real
+calls before design, and keeps risk discussion active with the user instead of
+silently drafting specs. Ends with a process-metrics record and improvement
+proposals.
 
 ### `aird-delivery-loop`
 
-Implementation and verification loop for an AIRD package. It reads the package, spawns independent workers per discrete workorder, integrates changes, and runs quality gates.
-
-Use it when discovery is complete and the goal is to deliver working code.
+Implementation and verification loop for an accepted AIRD package. It executes
+bounded slices, integrates changes, and runs fail-closed quality gates:
+real-runtime backend checks, browser checks with screenshot evidence, review,
+QA, and bounded defect loops. Ends with a process-metrics record and
+improvement proposals.
 
 ### `code-review-standards`
 
-Standards-backed review and implementation guidance for reviewers, backend workers, frontend workers, and general workers.
-
-It covers:
-
-- project structure
-- function/module design
-- reuse and abstraction
-- performance
-- API contracts
-- testing
-- security
-- language-specific guidance
-- community Awesome Lists as secondary discovery sources
+Standards-backed review and implementation guidance for reviewers and workers:
+project structure, function/module design, reuse (the Build-Less Ladder),
+performance, API contracts, testing, security, and language-specific
+references.
 
 ### `improve-my-code`
 
-Codebase improvement loop. It scans a repo, proposes prioritized improvement candidates, performs focused refactors, verifies behavior, runs review/QA when needed, and optionally commits.
+Codebase improvement loop: scan, prioritized candidates, focused refactors,
+verification, review/QA, optional commit.
 
-Use it when the user asks to improve, clean up, optimize, or refactor an existing codebase.
+### Supporting skills
+
+- `frontend-design` — feature-first, hierarchy-first frontend design workflow.
+- `senior-backend` / `senior-frontend` — production-grade per-stack guidance.
+- `rat` / `rca` — riskiest-assumption testing and root cause analysis; loaded
+  by `risk-analyst` during discovery.
+- `constraint-flow-thinking` — Theory of Constraints / systems-thinking
+  analysis.
+- `usability-tester` — persona-driven usability testing via computer use.
+- `verify-on-browser` — browser verification over Chrome DevTools Protocol;
+  loaded by `qa` for UI gates.
+- `cybersec-assistance` — repo-grounded threat modeling and security review.
+- `prompt-generator` — prompt engineering for any target.
+
+Vendored third-party skills live at the `skills/` top level: `figma`,
+`figma-implement-design`, `pdf`, `playwright`, `security-best-practices`,
+`spreadsheet`.
 
 ## Agents
 
-### `product-analyst`
+Sixteen subagent roles in two formats — `agents/*.toml` (Codex) and
+`claude/agents/*.md` (Claude Code). See [ROLES.md](ROLES.md) for the full
+reference: purposes, loop stages, and spawn discipline.
 
-Supports AIRD discovery by clarifying user value, workflows, product risks, scope, edge cases, and acceptance criteria.
+## Continuous improvement
 
-### `risk-analyst`
-
-Supports AIRD discovery and delivery by identifying risky assumptions, failure modes, cheap validation tests, and mitigation decisions.
+Both loops end by writing a metrics record to
+`~/.agent/aird-metrics/history.jsonl` (shared across runtimes), comparing it
+with previous runs, and — for recurring or severe failure signals — appending
+skill-change proposals to `~/.agent/aird-metrics/improvement-backlog.md`,
+each backed by an eval case. The contract lives at
+`skills/public/aird-discovery-loop/references/process-metrics.md`.
 
 ## Typical Flow
 
-1. Run `$aird-discovery-loop`.
-2. Discuss assumptions, risks, UI, and technical shape with the user.
-3. Produce the AIRD package and workorders.
-4. Run `$aird-delivery-loop`.
-5. Workers implement discrete workorders.
-6. Reviewer, QA, browser, security, and usability gates run as required.
-7. Fixes loop back to workers until the DoD is satisfied.
+1. Run `$aird-discovery-loop` (Codex) or `/aird-discovery-loop` (Claude Code).
+2. Discuss assumptions, risks, UI, and technical shape with the user; probe
+   existential assumptions with real calls.
+3. Produce the AIRD package, accept the first wave, review the discovery
+   summary.
+4. Run `$aird-delivery-loop` / `/aird-delivery-loop`.
+5. The orchestrator implements slices; workers spawn only for parallelism or
+   context headroom.
+6. Reviewer, QA, browser, security, and usability gates run as required, all
+   fail-closed with evidence.
+7. Fixes loop until the Definition of Done is satisfied.
+8. The loop records metrics, compares with history, and proposes its own
+   improvements.

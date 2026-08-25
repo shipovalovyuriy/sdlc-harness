@@ -21,7 +21,7 @@ nothing in either loop should still reference V3 frontmatter, `aird-lint.mjs`,
 - Wave Readiness
 - Base And Review Manifest
 - Session Checkpoint Contract
-- Finding Closure
+- Review Budget And Finding Cutoff
 
 ## The Three Sources Of Truth
 
@@ -359,7 +359,9 @@ A wave may be accepted when:
 2. the closure fits the profile budget and has no dependency on evidence,
    verification, or review work;
 3. deterministic validation passes;
-4. one semantic review accepts the wave against the current target base; and
+4. one broad final combined review has inspected target-wave semantics and
+   whole-package integrity against the current target base, and every finding
+   registered in that response meets its original closure criterion; and
 5. `aird-contract.mjs accept-wave` records the base and hashes.
 
 Later waves may remain `draft`, `blocked`, or unreviewed. They do not block the
@@ -368,7 +370,7 @@ meets this contract, not when the whole possible roadmap is fully decomposed.
 
 ## Base And Review Manifest
 
-After an accepted semantic review, run:
+After the final combined review and deterministic finding closure, run:
 
 ```bash
 node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-contract.mjs" \
@@ -383,7 +385,7 @@ branch that is behind or diverged from the target base and atomically writes
 An advance of the target base invalidates all accepted waves. A changed
 workorder contract invalidates only the wave containing that workorder. Normal
 `status: ready` → `in_progress` → `done` transitions do not. Delivery may consume
-every unchanged accepted wave without another semantic review.
+every unchanged accepted wave without another review.
 
 ## Session Checkpoint Contract
 
@@ -393,6 +395,11 @@ checkpoint after every phase or execution slice by writing `STATE.md` and
 
 - Routine checkpoint: `checkpoint_kind: routine`. Do not change delivery status,
   do not ask the user for anything, do not tell the user to open a new task.
+- Proactive root handoff: `checkpoint_kind: proactive_handoff`. After six
+  bounded phases/slices since the last fresh root task, or at about 70 percent
+  context, write `STATE.md` + `.continue-here.md` and end the current root task
+  even when work is smooth. Reset `root_slices_since_handoff` only in the fresh
+  task that resumes from disk.
 - Hard stop: `checkpoint_kind: hard_stop`. Only these conditions qualify —
   context usage reaches 100 percent, auto-compaction or summary injection
   occurred, an external blocker appeared, a required user decision is pending,
@@ -400,17 +407,60 @@ checkpoint after every phase or execution slice by writing `STATE.md` and
   `STATE.md` + `.continue-here.md` as the very next action and end the root task.
 
 Track monotonic elapsed minutes, workflow cycles, and completed workorders since
-the last checkpoint so a resumed session can see drift. These counters are
-observability, not thresholds: they never stop a worker, never change readiness,
-and never create a chat by themselves. Auto-compaction does not reset them.
+the last checkpoint so a resumed session can see drift. These counters do not
+change readiness. `root_slices_since_handoff` is the sole operational threshold:
+six triggers a proactive root handoff; auto-compaction does not reset it.
 Structural sizing, safety, readiness, and release gates remain blocking and are
 not downgraded by any checkpoint policy.
 
-## Finding Closure
+## Review Budget And Finding Cutoff
+
+Discovery permits one reviewer-agent call at the end of discovery, immediately
+before `accept-wave`. It is a broad combined review of target-wave semantics and
+whole-package integrity. This is a hard budget. Do not invoke reviewers during
+intake, discussion, reconnaissance, product/UX work, risk analysis, technical
+design, prototyping, or workorder drafting. Do not add separate semantic,
+architecture, risk, security, UX, integrity, closure, or sanity review calls.
+Specialist work during authoring, probing, and scoped quality gates is not a
+license to inspect the completed package for new findings.
+
+The ledger is `STATE.md` frontmatter, not a prose section: `review_calls_used`,
+`finding_cutoff` (`open`/`sealed`), `review_coverage`
+(`unverified`/`partial`/`complete`), `review_exception`, and a `findings:`
+block list. `aird-validate.mjs` enforces every one of them — it rejects a second
+call, and it refuses `ready_for_delivery` while the cutoff is open, coverage is
+short, or a registered finding is still open. This mirrors `blockers:` for the
+same reason: prose blocks nothing.
 
 Use package-wide monotonic IDs such as `F-0001`; never reuse or renumber them.
-A closure review receives the changed workorders and the still-open finding
-IDs, not the whole package. It closes or retains those findings. It may add a
-new blocking finding only when the changed diff or a newly advanced target base
-introduced it; record that cause next to the new ID. Unrelated coverage waits
-for the next wave or final delivery review.
+The final combined reviewer response must register all of its findings at once,
+covering semantics, reference and producer closure, vocabulary, runtime
+requirement ownership, blockers, and applicable security/UX boundaries. Every
+finding carries `closure_criterion` and a runnable `evidence_command`; the
+validator rejects one without them, because the orchestrator that writes the fix
+is the same one that judges it. The finding-registration window closes when that
+response returns.
+
+The reviewer also reports coverage — which workorders and documents it actually
+read. A one-shot whole-package review fails by exhausting context, not by
+returning a wrong opinion, and nothing else would surface that. Record
+`review_coverage: partial` when the pass did not reach the whole package; that
+earns exactly one continuation over the unread remainder, counted as the same
+call, never a fresh opinion round. Readiness stays blocked until coverage is
+`complete`.
+
+Do not run a closure reviewer. The main orchestrator fixes and closes all IDs in
+one batch, inspecting only the changed diff, the original closure criteria, the
+named evidence, and deterministic validator output. Closure cannot search for
+unrelated coverage or register another finding.
+
+After the cutoff, defer newly noticed non-critical issues to a later wave or
+backlog; they cannot block the current acceptance. Only concrete evidence of a
+critical exploitable security exposure or irreversible data loss/corruption
+introduced by the closure diff may interrupt acceptance. Record the exception
+and ask the user whether to reopen discovery or defer the change; never spawn a
+reviewer automatically. A tool failure that returned no usable verdict may be
+retried, but a disagreement or desire for extra confidence does not reset the
+budget. A later wave that changes contracts gets one final combined review when
+that wave reaches its own end-of-discovery boundary; unchanged accepted hashes
+are never reviewed again.

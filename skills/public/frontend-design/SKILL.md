@@ -15,6 +15,7 @@ This skill is for visual design work that must end in real frontend code. Use it
 1. Classify the surface and constraints.
 - Identify the interface type: form, settings page, dashboard, landing page, empty state, data table, workflow tool, marketing section, or full application shell.
 - Identify the real constraints before styling: audience, accessibility, responsiveness, existing design system, implementation stack, and whether the task is a new surface or a refactor.
+- Check for a `DESIGN.md` (root, `docs/`, `.design/`) or an equivalent token source before assuming none exists. If one is present, read [DESIGN.md](references/design-md.md) — its tokens and Don'ts are constraints, not suggestions.
 - If the request is mostly about frontend architecture or performance rather than visual design, pair with `senior-frontend` instead of stretching this skill past its purpose.
 
 2. Start from the feature, not the shell.
@@ -35,7 +36,8 @@ This skill is for visual design work that must end in real frontend code. Use it
 
 5. Define systems before decoration.
 - Reuse an existing design system when one already exists. If none exists, define a constrained set of values for spacing, type scale, weights, color shades, radius, and elevation before refining visuals.
-- Avoid arbitrary one-off values unless there is a compelling visual reason.
+- Avoid arbitrary one-off values unless there is a compelling visual reason. When the project has a `DESIGN.md`, compose from its tokens; a value the system lacks is a recorded system change, not a local exception.
+- Write the system down so the next session inherits it instead of re-deriving it — whether you just defined it, or the project has one that lives only in a Tailwind config and component archaeology. [DESIGN.md](references/design-md.md) covers both extraction and authoring; there is no generator command, this is agent work.
 - Read the references that match the task:
   - [layout and spacing](references/layout-and-spacing.md)
   - [text and typography](references/text-and-typography.md)
@@ -78,6 +80,7 @@ This skill is for visual design work that must end in real frontend code. Use it
 - Use [layout and spacing](references/layout-and-spacing.md) when the layout feels messy, crowded, over-stretched, or inconsistently grouped.
 - Use [text and typography](references/text-and-typography.md) when readability, copy presentation, labels, headings, metrics, or table text need work.
 - Use [color systems](references/color-systems.md) when defining or cleaning up palettes, neutral ramps, accents, status colors, or contrast handling.
+- Use [DESIGN.md](references/design-md.md) when the project ships one, when tokens and code disagree, or when a system you just defined should outlive the session.
 - Use [forms and choice controls](references/forms-and-choice-controls.md) for creation forms, payment or checkout forms, live previews, expected input lengths, radio groups, pricing choices, and other mutually exclusive options.
 - Use [mobile and navigation](references/mobile-and-navigation.md) for thumb reach, touch-target sizing, mobile CTA placement, top-navigation dropdowns, and mega menus.
 - Use [depth, images, and finishing](references/depth-images-and-finishing.md) for shadows, overlap, image handling, empty states, accent borders, background treatment, and the last 10 percent of polish.
