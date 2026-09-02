@@ -56,11 +56,14 @@ reference: purposes, loop stages, and spawn discipline.
 
 ## Continuous improvement
 
-Both loops end by writing a metrics record to
-`~/.agent/aird-metrics/history.jsonl` (shared across runtimes), comparing it
-with previous runs, and — for recurring or severe failure signals — appending
-skill-change proposals to `~/.agent/aird-metrics/improvement-backlog.md`,
-each backed by an eval case. The contract lives at
+Both loops end by running
+`skills/public/aird-delivery-loop/assets/scripts/aird-metrics.mjs`, which
+derives the run's metrics from the package on disk, writes a record to
+`~/.agent/aird-metrics/history.jsonl` (shared across runtimes), and prints the
+comparison with previous runs. For recurring or severe failure signals the
+loop appends skill-change proposals to
+`~/.agent/aird-metrics/improvement-backlog.md`, each backed by an eval case.
+The contract lives at
 `skills/public/aird-discovery-loop/references/process-metrics.md`.
 
 ## Typical Flow

@@ -73,6 +73,15 @@ Optional codebase map:
 - Evidence from user/repo:
 - Delivery implications:
 
+### Edge Cases
+
+Every declared edge case gets an `EC-NN` id; `08-quality-gates.md` must map
+each one onto a gate whose selector actually picks the check that guards it.
+
+| ID | Case | Expected behavior |
+|---|---|---|
+| EC-01 | | |
+
 ## 02-ux-problem-framing.md
 
 - Primary flow:
@@ -218,6 +227,20 @@ Every medium/high risk must name the decision, mitigation owner or workorder, an
 Every DoD item must be covered by at least one gate; every gate must point to the DoD item it protects.
 
 | Gate | Protects DoD item | Verification level |
+|---|---|---|
+
+Each gate row records the command and the output it produced when it was
+written, or the reason it is legitimately empty until the code exists — in that
+case naming the test or string the workorder promises to create, which the
+selector must catch.
+
+### Edge Case -> Gate Mapping
+
+Every edge case declared in `01-prd.md` must fall under at least one gate's
+selector. A case covered by a check that no gate selects is protected by
+nothing.
+
+| Edge case (`EC-NN` from 01-prd.md) | Gate that selects it | Selector proof |
 |---|---|---|
 
 ## 09-dod.md

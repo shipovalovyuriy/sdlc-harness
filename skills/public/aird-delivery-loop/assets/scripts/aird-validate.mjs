@@ -28,6 +28,8 @@ import {
   parseStateBlockers,
   parseStateFindings,
   parseWaveOutcomes,
+  parsePipeTable,
+  section,
   writeScopeCovers,
 } from './aird-contract.mjs';
 
@@ -298,6 +300,33 @@ if (GATED.has(status)) {
   else if (!validAcceptedWaves.length) err('no hash-matching accepted implementation wave is ready');
   if (status === 'in_delivery' && !activeWave) err('status is in_delivery but STATE.md active_wave is none/missing');
   if (activeWave && !waveResults[activeWave]?.valid) err(`STATE.md active_wave ${activeWave} is not a valid accepted wave`);
+}
+
+// The three readiness fields are independent contract data (delivery-contract
+// "Readiness Contract"). A status that claims a stage nobody marked ready is
+// exactly the in_delivery -> complete jump the lifecycle table forbids.
+if (state.aird_state_version === '4.0') {
+  const policy = (message) => (GATED.has(status) ? err(message) : warn(message));
+  const READINESS = {
+    ready_for_implementation: ['blocked', 'ready'],
+    ready_for_runtime_verification: ['blocked', 'ready', 'not_required'],
+    ready_for_release: ['blocked', 'ready'],
+  };
+  for (const [field, allowed] of Object.entries(READINESS)) {
+    if (!Object.prototype.hasOwnProperty.call(state, field)) {
+      policy(`STATE.md frontmatter declares no \`${field}:\`; the three readiness fields are contract data, not prose`);
+    } else if (!allowed.includes(String(state[field]).trim())) {
+      err(`STATE.md ${field} must be one of ${allowed.join('|')}; got ${state[field]}`);
+    }
+  }
+  const requires = (field, allowed, statuses) => {
+    if (!statuses.includes(status)) return;
+    const value = String(state[field] ?? '').trim();
+    if (!allowed.includes(value)) err(`status ${status} requires STATE.md ${field}: ${allowed.join('|')}; got ${value || '(missing)'}`);
+  };
+  requires('ready_for_implementation', ['ready'], [...GATED]);
+  requires('ready_for_runtime_verification', ['ready', 'not_required'], ['verifying', 'ready_for_release', 'complete']);
+  requires('ready_for_release', ['ready'], ['ready_for_release', 'complete']);
 }
 
 function reportWorkorderIssue(workorder, message) {
@@ -574,7 +603,11 @@ for (const workorder of workorders) {
   const gatesText = read(join(packageDir, '08-quality-gates.md'));
   const dodText = read(join(packageDir, '09-dod.md'));
   const knownRisks = new Set(collectIds(riskText, /R-\d+/g));
-  const knownGates = new Set(collectIds(gatesText, /G-\d+/g));
+  // A gate is defined by its own row/heading, not by being cited in a mapping
+  // table -- otherwise a mapping onto a gate nobody wrote would define it.
+  const stripSection = (text, heading) => { const body = section(text, heading); return body ? text.replace(body, '') : text; };
+  const gateDefinitionText = stripSection(stripSection(gatesText, 'Gate\\s*(?:->|→)\\s*DoD Mapping'), 'Edge Case\\s*(?:->|→)\\s*Gate Mapping');
+  const knownGates = new Set(collectIds(gateDefinitionText, /G-\d+/g));
   const knownDod = new Set(collectIds(dodText, /DOD-\d+/g));
 
   for (const workorder of workorders) {
@@ -602,6 +635,34 @@ for (const workorder of workorders) {
       }
       for (const gateId of mapping.keys()) {
         if (!knownGates.has(gateId)) policy(`Gate -> DoD Mapping references ${gateId}, which 08-quality-gates.md does not define`);
+      }
+    }
+  }
+
+  // Every edge case the PRD declares (EC-NN rows) must fall under some gate's
+  // selector. A case covered by a check that no gate selects is protected by
+  // nothing: that check runs only when somebody runs the whole file.
+  const prdText = read(join(packageDir, '01-prd.md'));
+  const knownEdgeCases = new Set(collectIds(prdText, /\bEC-\d+/g));
+  if (gatesText && knownEdgeCases.size) {
+    const body = section(gatesText, 'Edge Case\\s*(?:->|→)\\s*Gate Mapping');
+    if (!body.trim()) {
+      policy('01-prd.md declares edge cases (EC-*) but 08-quality-gates.md has no `Edge Case -> Gate Mapping` table');
+    } else {
+      const covered = new Set();
+      for (const line of body.split(/\r?\n/)) {
+        if (!line.trim().startsWith('|')) continue;
+        const edgeCases = collectIds(line, /\bEC-\d+/g);
+        const gateIds = collectIds(line, /\bG-\d+/g);
+        if (!edgeCases.length) continue;
+        if (!gateIds.length) policy(`Edge Case -> Gate Mapping row for ${edgeCases.join(', ')} names no gate`);
+        for (const gateId of gateIds) {
+          if (!knownGates.has(gateId)) policy(`Edge Case -> Gate Mapping references ${gateId}, which 08-quality-gates.md does not define`);
+          else edgeCases.forEach((edgeCase) => covered.add(edgeCase));
+        }
+      }
+      for (const edgeCase of knownEdgeCases) {
+        if (!covered.has(edgeCase)) policy(`${edgeCase} is declared in 01-prd.md but no gate selects it in the Edge Case -> Gate Mapping table`);
       }
     }
   }
@@ -660,6 +721,30 @@ if (filesOnDisk.has('02-ui-prototype.md')) {
       if (!workorder.dependsOn.includes(producer)) {
         reportWorkorderIssue(workorder, `Consumes "${row.input}" is produced by ${producer} but depends_on does not include it; a consumed input is a dependency, not a note`);
       }
+    }
+  }
+}
+
+// Scope evidence. The declared write scope and impact radius must come from a
+// search run against this codebase, and the workorder records that search.
+// A list remembered from a previous wave looks complete and proves nothing.
+for (const workorder of workorders) {
+  if (!EXECUTABLE_KINDS.has(workorder.kind) || workorder.status === 'deferred') continue;
+  if (workorder.frontmatter.aird_workorder_schema_version !== '4.0') continue;
+  const body = section(workorder.text, 'Scope Evidence');
+  if (!body.trim()) {
+    reportWorkorderIssue(workorder, 'has no `## Scope Evidence` section; record the search that produced the declared write scope (an explicit `None` line is a valid answer)');
+    continue;
+  }
+  const rows = parsePipeTable(body).filter((cells) => cells.some((cell) => cell));
+  if (!rows.length) {
+    if (!/\bnone\b/i.test(body)) reportWorkorderIssue(workorder, '`## Scope Evidence` has neither a search row nor an explicit `None`');
+    continue;
+  }
+  for (const row of rows) {
+    const command = row[1] ?? '';
+    if (!/\b(?:rg|grep|git\s+grep|ag|ack|find|fd)\b/.test(command)) {
+      reportWorkorderIssue(workorder, `Scope Evidence row "${row[0]}" names no search command; declared paths must come from a search, not from memory`);
     }
   }
 }
@@ -803,7 +888,9 @@ if (filesOnDisk.has('02-ui-prototype.md')) {
 // Non-functional targets are a load-bearing decision for a deep package, and
 // the one most often left out entirely -- then cited later as "the PRD budget".
 if (state.discovery_profile === 'deep') {
-  const nonFunctional = /non-?functional|latency budget|performance budget|scale target|throughput budget|cost model|cost budget/i;
+  // English and Russian phrasings: AIRD prose is written in Russian, and a
+  // gate that only reads English fails every package that follows that rule.
+  const nonFunctional = /non-?functional|latency budget|performance budget|scale target|throughput budget|cost model|cost budget|нефункциональн|бюджет задержк|бюджет производительност|целев\w* масштаб|ожидаем\w* масштаб|бюджет стоимост|модель стоимост|бюджет пропускн|пропускн\w* способност/i;
   const covered = ['01-prd.md', '04-trd.md'].some((file) => nonFunctional.test(read(join(packageDir, file))));
   if (!covered) {
     const message = 'deep profile states no non-functional targets (scale, latency/performance budget, cost) in 01-prd.md or 04-trd.md; state them or record explicitly why they do not apply';

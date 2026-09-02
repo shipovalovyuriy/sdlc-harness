@@ -1,9 +1,9 @@
 # AIRD Process Metrics And Continuous Improvement Contract
 
 This is the canonical contract for the end-of-loop improvement phase that both
-`/aird-discovery-loop` and `/aird-delivery-loop` run. Its purpose is the same
+`$aird-discovery-loop` and `$aird-delivery-loop` run. Its purpose is the same
 "flagged twice becomes a rule" mechanism that mature SDLC playbooks apply to
-`CLAUDE.md`: every loop run leaves a machine-readable metrics record, the
+`AGENTS.md`: every loop run leaves a machine-readable metrics record, the
 current run is compared against previous AIRD runs, and any **systemic** failure
 signal must produce a concrete skill-change proposal backed by an eval case.
 Without this phase every delivery learns from zero; with it the loop itself is
@@ -38,16 +38,32 @@ compared together):
 
 Per package, a snapshot of the same record: `.agent/aird/<slug>/metrics/`
 holding `discovery.json` and/or `delivery-<wave>.json`. The history line and the
-snapshot are byte-identical JSON.
+snapshot are byte-identical JSON. `AIRD_METRICS_DIR` overrides the store
+location for tests.
 
-Create directories with `mkdir -p` as needed. Append with a single bounded
-command, e.g.:
+## Recording Is Scripted
+
+The record is produced by
+`aird-delivery-loop/assets/scripts/aird-metrics.mjs`, never typed by hand:
 
 ```bash
-mkdir -p ~/.agent/aird-metrics/evals && \
-  tr -d '\n' < .agent/aird/<slug>/metrics/delivery-W1.json >> ~/.agent/aird-metrics/history.jsonl && \
-  printf '\n' >> ~/.agent/aird-metrics/history.jsonl
+node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-metrics.mjs" \
+  ".agent/aird/<slug>" --kind discovery|delivery [--wave W1] --runtime codex|codex \
+  [--outcome complete|escalated|abandoned] [--extra '<json>'] [--dry-run] [--json]
 ```
+
+It derives every field it can from the package (`STATE.md` frontmatter and
+slice index, `evidence/state-archive.md`, `.continue-here.md`, workorders,
+`03-risk-register.md`, `REVIEW-MANIFEST.json`, `00-discussion-log.md` tables,
+`08-quality-gates.md`, `10-*-verification.md`, fix workorders and finding
+notes), writes the snapshot, appends the history line, and prints the
+comparison, the fired signals, and the list of fields still `null`. The
+orchestrator supplies through `--extra` only what the package cannot prove
+(worker counts and reasons, first-pass gates, fix cycles, discovery defects,
+rework files, compactions) and leaves the rest `null`. Handwritten records
+are what produced nine records in three incompatible key sets before this
+script existed; migrated copies of those live in `history.jsonl` with a
+`notes` line saying so, and the originals in `history.pre-schema1.jsonl`.
 
 ## When To Record
 
@@ -99,7 +115,10 @@ Shared header fields for both kinds:
 `runtime` names the runtime that executed the loop (`claude` or `codex`).
 `duration_hours` is wall clock from the first artifact write to the terminal
 outcome, to one decimal; `null` when not derivable. `root_handoffs` counts
-fresh-task handoffs consumed by the run.
+fresh-task handoffs consumed by the run. The `findings:` entries in `STATE.md`
+and the frontmatter of fix workorders / finding notes may carry a `class:`
+field from the fixed vocabulary; that is what `findings_by_class` is derived
+from.
 
 ### kind: discovery — additional fields
 
@@ -155,7 +174,8 @@ Correction procedure) triggered during this discovery.
     "impact_radius_misses": 0,
     "proxy_probes": 0,
     "oversized_workorders": 0,
-    "consumes_gaps": 0
+    "consumes_gaps": 0,
+    "total": 0
   },
   "hard_stops": 0,
   "auto_compactions": 0
@@ -175,7 +195,9 @@ Definitions:
 - `discovery_defects` — defects delivery found in the *package*, not the code:
   impact-radius locks the search missed, existential probes that turned out to
   be proxies, workorders failing the sizing gate at pre-flight, unresolved
-  `## Consumes` inputs. Every nonzero value here is a discovery-skill signal,
+  `## Consumes` inputs. `total` is the sum (the script fills it) and the only
+  value migrated pre-schema records carry; additional named classes may be
+  added as extra keys. Every nonzero value here is a discovery-skill signal,
   not a delivery-skill signal.
 - Sources: the delivery brief, `STATE.md` slice index plus
   `evidence/state-archive.md`, `10-*-verification.md` frontmatter,
@@ -183,7 +205,7 @@ Definitions:
 
 ## Comparison And Signals
 
-Read history with `tail -n 20 ~/.claude/aird-metrics/history.jsonl`, keep
+Read history with `tail -n 20 ~/.agent/aird-metrics/history.jsonl` (the script below does this), keep
 records of the same `kind`; when at least 3 share the current `profile`,
 compare within the profile, otherwise across all of the kind. Fewer than 2
 comparable records → record only, propose only on hard signals (marked ⚠
@@ -224,7 +246,7 @@ it. ⚠-signals are severe enough to propose on first occurrence.
 
 ## Proposals
 
-Proposals are appended to `~/.claude/aird-metrics/improvement-backlog.md`, in
+Proposals are appended to `~/.agent/aird-metrics/improvement-backlog.md`, in
 clear Russian per the AIRD language standard, one entry per proposal:
 
 ```markdown

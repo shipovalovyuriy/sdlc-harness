@@ -30,12 +30,12 @@ The core rule that keeps token spend sane: **no long-lived all-remembering orche
   `.continue-here.md` (from `assets/templates/continue-here.md`) and end the
   current root task. The next task continues from disk. Never rely on
   compaction to carry state.
-- **Workers exist for actual parallelism, or for context headroom.** The orchestrator implements a sole ready slice directly while its own context stays under 60%. Spawn an implementation worker when another large, dependency-ready slice with a disjoint write set runs concurrently, or when the orchestrator crosses 60% with substantive work left. Never spawn for a role label or merely because a workorder is substantive. Give a justified worker the workorder file, named AIRD doc paths, and standards refs—never the parent transcript.
+- **Workers exist for actual parallelism, or for context headroom.** The orchestrator implements slices itself; the two spawn justifications are defined once, in Independence Rules below. Give a justified worker the workorder file, named AIRD doc paths, and standards refs—never the parent transcript.
 - **The orchestrator never holds raw bulk.** Full logs, screenshots, and file contents live on disk; the orchestrator holds verdicts, counts, and paths.
 
 Explicit invocation counts as permission for the delegation this skill actually needs; it is not permission to spawn an agent for every edit or finding. Its lean-routing rules have priority over the general no-delegation rule in `AGENTS.md`. Do not ask before each justified spawn.
 
-Use `references/gates.md` for gate behavior, `references/revision-loop.md` for bounded defect loops, `references/verification-patterns.md` for real-implementation checks, `references/backend-runtime-gates.md` when accepted workorder frontmatter selects backend runtime profiles, and the discovery skill's `references/process-metrics.md` for the end-of-loop metrics and improvement phase. `surface` and `runtime_profiles` are authoritative; never infer gate routing from arbitrary workorder prose.
+Use the discovery skill's `references/gates.md` (one taxonomy for both loops) for gate behavior, `references/revision-loop.md` for bounded defect loops, `references/verification-patterns.md` for real-implementation checks, `references/backend-runtime-gates.md` when accepted workorder frontmatter selects backend runtime profiles, the discovery skill's `references/language.md` for the language rule, and its `references/process-metrics.md` for the end-of-loop metrics and improvement phase. `surface` and `runtime_profiles` are authoritative; never infer gate routing from arbitrary workorder prose.
 
 The canonical definition of readiness fields, lifecycle statuses, workorder
 schema, product-first budget, and checkpoint semantics is
@@ -62,27 +62,17 @@ is vague, stop and recommend `$aird-discovery-loop`.
 
 ## Language And Clarity Standard
 
-Write every human-readable AIRD specification, workorder explanation, decision
-or deviation record, status update, verification interpretation, and
-user-facing report in clear Russian. The same rule applies when Delivery edits
-Discovery artifacts. Repeat this requirement in every worker, reviewer, QA, or
-specialist prompt that can create or edit AIRD text.
-
-- Prefer ordinary Russian terms over unexplained English terminology. In prose,
-  explain concepts such as product requirements, technical design, program
-  interface, user interface, completion criteria, workorder, quality gate,
-  rollout, fallback, and checkpoint in Russian rather than relying on PRD, TRD,
-  API, UI/UX, DoD, or English labels alone.
-- Spell out and explain every necessary abbreviation or borrowed term on first
-  use. Use a short form later only when its meaning is already clear.
-- Describe results as cause and effect: what changed, why, how the system now
-  behaves, what evidence proves it, and what remains blocked. Do not substitute
-  filenames, status codes, or raw command output for an explanation.
-- Preserve exact filenames, source identifiers, schema/frontmatter keys,
-  commands, protocol names, third-party product names, and raw logs when they
-  are contract data. Explain them in Russian alongside the exact form. This
-  rule does not translate source-code identifiers or change the product's own
-  localization requirements.
+Write every human-readable AIRD explanation, deviation record, status update,
+verification interpretation, and user-facing report in clear Russian — also
+when Delivery edits Discovery artifacts — and repeat that requirement in every
+worker, reviewer, QA, or specialist prompt that can create or edit AIRD text.
+The full rule is `../aird-discovery-loop/references/language.md`; the short
+form: ordinary Russian terms first with the exact term in parentheses on first
+use; results as cause and effect (what changed, why, how it behaves, what
+evidence proves it, what stays blocked), never filenames or raw output in place
+of an explanation; and **template headings, frontmatter keys, enum tokens, IDs,
+commands, and paths are contract keys** that the validator reads literally —
+keep them verbatim and write the content under them in Russian.
 
 ## Required Inputs
 
@@ -216,7 +206,7 @@ require them.
 
 ## Workorder Sizing Gate
 
-A workorder is executable only if one executor can complete it in one bounded context without degradation. The orchestrator is the default executor for implementation, spike, and fix workorders; an implementation worker is eligible only under the two spawn justifications below. At pre-flight, check workorders in the selected accepted dependency closure, not later draft waves, against:
+A workorder is executable only if one executor can complete it in one bounded context without degradation (the orchestrator by default; a worker only under Independence Rules). At pre-flight, check workorders in the selected accepted dependency closure, not later draft waves, against:
 
 - it has a **Task Breakdown of 1–3 atomic tasks** (an atomic task = one coherent edit unit: one endpoint, one component, one migration, one config surface — roughly one commit);
 - the executor can finish it while staying within about half of its context window (inputs + files it must open + its own diff);
@@ -236,7 +226,7 @@ runnable ownership slice over mechanical one-file fragmentation.
 - Do not spawn a worker for a purely mechanical closure: exact lock/count updates, snapshots, fixtures, imports, formatting, deterministic test expectation updates, AIRD evidence/checkpoints, or an adjacent path-scope correction that changes no production behavior. The orchestrator handles one coherent mechanical finding group as its own bounded slice and records the same evidence.
 - A fix is not mechanical when it changes production source behavior, architecture, auth/security/privacy, persisted data or migrations, public/runtime contracts, concurrency, or requires domain judgment. That classification increases review and verification depth; it does not by itself justify a worker. Keep the fix with the orchestrator unless it satisfies one of the two spawn justifications.
 - If an impact-radius omission is discovered only after a worker ran, do not spawn another agent merely to compensate. Record a fix workorder and repair the scoped test/fixture closure locally when deterministic; return to discovery when the missing scope changes the accepted product or architecture contract.
-- Use `fork_turns: "none"` for workers. Pass only the workorder path, the named AIRD doc paths, and standards refs; never pass the parent transcript. `fork_turns`, not `fork_context`, is the supported spawn field.
+- Pass only the workorder path, the named AIRD doc paths, and standards refs; never pass the parent transcript. Spawn it with `fork_turns: "none"` (`fork_turns`, not `fork_context`, is the supported spawn field).
 - Keep write sets disjoint. If two workorders need the same file, sequence them or create an integration workorder.
 - A worker must not choose architecture. If the brief is insufficient, the worker STOPs and reports a blocker; the main session routes it back to `architect`/discovery.
 - Workers report changed files, tests run, contract deviations, and blockers.
@@ -296,29 +286,16 @@ revision before code. This is not a broad semantic re-review.
 
 **The plumbing check tests the real payload, not an equivalent one.** Discovery
 proved the external contract at its phase-3.5 probe gate; pre-flight confirms
-that the code path still emits what that probe accepted. Drive the actual
+that the code path still emits what that probe accepted: drive the actual
 serializer/client with its unmodified output against the real boundary and
-assert the terminal observable. A reachability check, a hand-written "equivalent"
-request, or a documentation example is a proxy probe — it passes while the real
-path returns `400`, and it converts a one-minute discovery failure into a
-half-day delivery blocker. See `references/verification-patterns.md` for the
-full red-flag list. If `03-risk-register.md` lists an existential risk whose
-`probe` evidence does not exercise the production path, treat it as unproven and
-route it back through the discovery probe gate before spawning implementation.
-
-Two specific shapes qualify as "does not exercise the production path", and both
-pass a careless read because the evidence file itself is honest:
-
-- the risk declares a non-empty `faked_boundaries`, or its probe log contains
-  substitution markers (`mock`, `double`, `stub`, `live_*: false`) with no
-  `faked_boundaries` declaration at all;
-- the `claim` describes a narrower scope than the design depends on — typically
-  because it was rewritten after a partial probe. `claim_locked_at` older than
-  the probe evidence is the check; the validator enforces it.
-
-In both cases the assumption is unproven regardless of the `status` field.
-Delivery does not re-litigate design, but it does not implement against an
-untested contract either: stop and route it back.
+assert the terminal observable. The proxy-probe red flags are in
+`references/verification-patterns.md`. If an existential risk in
+`03-risk-register.md` is `proven` while its probe substituted a boundary or its
+claim was narrowed after the fact (the validator checks `faked_boundaries` and
+`claim_locked_at`, per the discovery contract's Existential Risk Contract), the
+assumption is unproven regardless of the `status` field: delivery does not
+re-litigate design, but it does not implement against an untested contract
+either — stop and route it back through the discovery probe gate.
 
 When `02-ui-prototype.md` exists and the selected wave has `surface: frontend`
 or `mixed`, its `docs_to_read` and acceptance evidence must name the prototype
@@ -330,7 +307,7 @@ delivery brief. Do not regroup or semantically re-review the accepted wave.
 
 ### 2. Route Implementation Execution
 
-Apply the spawn gate before role routing. If only one implementation slice is ready and the orchestrator is under 60% context, the orchestrator implements it. For a slice eligible under either justification — actual parallelism or context headroom — route by frontmatter `surface`: `backend-worker` for backend/data/infra runtime work, `frontend-worker` for frontend, and `worker` for mixed/tooling/docs. Use `debugger` for a required bug-isolation pass and `cybersec` for an explicitly required security review; those specialist gates do not turn a sequential implementation workorder into a worker spawn. Do not route by keyword matches in the body.
+Apply the spawn gate (Independence Rules) before role routing; the orchestrator implements a sole ready slice itself. For a slice eligible under either justification, route by frontmatter `surface`: `backend-worker` for backend/data/infra runtime work, `frontend-worker` for frontend, and `worker` for mixed/tooling/docs. Use `debugger` for a required bug-isolation pass and `cybersec` for an explicitly required security review; those specialist gates do not turn a sequential implementation workorder into a worker spawn. Do not route by keyword matches in the body.
 
 Standards via `$code-review-standards` — with a hard cap. Every subagent already pays a ~28K-token spawn tax (permissions instructions + AGENTS.md) before reading anything; do not add a 25K standards pile on top. Rules:
 
@@ -391,6 +368,12 @@ Do not split an accepted wave or manufacture a singleton wave to obtain an
 earlier review. If an accepted wave genuinely cannot proceed safely without an
 intermediate reviewer, pause and route the wave definition back to discovery;
 do not invent a delivery-time per-workorder gate.
+
+Closure is deliberately asymmetric between the loops: discovery closes its
+own findings without a reviewer because their criteria are deterministic
+(validator output, a named command), while a code fix is judged by a fresh
+restricted closure reviewer because its correctness is not. Do not import the
+discovery rule here.
 
 If a reviewer finds blocking issues, assign monotonic finding IDs and batch
 all findings from that pass into the smallest coherent fix cycle(s) by
@@ -503,7 +486,7 @@ For each verification finding:
    product behavior, architecture, security, persisted data, or requires a
    multi-step implementation slice. Both locations stay outside discovery's
    immutable `workorders/` and do not invalidate accepted hashes.
-3. Choose the smallest executor. The orchestrator fixes the coherent finding group locally, including non-mechanical fixes. Spawn an implementation worker only under the two spawn justifications: the group is a large independent slice running concurrently with another dependency-ready slice, or the orchestrator is at/above 60% context with substantive work left. A production-behavior change or specialist judgment alone does not justify a worker.
+3. Choose the smallest executor per Independence Rules: the orchestrator fixes the coherent finding group locally, mechanical or not; a production-behavior change or specialist judgment raises review depth, it does not justify a worker.
 4. Re-run only impacted author tests after each fix. Do not spawn reviewer/QA
    while sibling fixes from the same finding group remain open. After the
    whole finding group is author-complete, run one restricted closure pass on
@@ -555,21 +538,27 @@ At the terminal outcome of the delivery run — `status: complete`, or a termina
 from the discovery skill's `references/process-metrics.md` (the canonical
 contract):
 
-1. Write the delivery metrics record to
-   `.agent/aird/<feature-slug>/metrics/delivery-<wave>.json` using the
-   canonical schema (`kind: delivery`; `runtime` names the runtime actually
-   executing this loop — `claude` or `codex`). It covers the whole
-   delivery, including slices from earlier root sessions — read the
-   `.continue-here.md`/`STATE.md` counters and `evidence/state-archive.md`
-   rather than recounting from memory. A value you cannot derive is `null`,
-   never an estimate. An escalated or paused run records the same schema:
-   failed runs are the most valuable records the loop produces.
-2. Append the record as one line to `~/.agent/aird-metrics/history.jsonl` and
-   compare against previous runs (`tail -n 20`, same kind; same profile when
-   at least 3 records share it) using the delivery signals defined in the
-   contract. Any nonzero `discovery_defects` value is a **discovery-skill**
-   signal — the proposal it produces targets the discovery skill's rules, not
-   this file.
+1. Run the metrics script; it derives what the package on disk can prove
+   (slices from `STATE.md` and `evidence/state-archive.md`, gates, findings,
+   hard stops, verification evidence), writes
+   `.agent/aird/<feature-slug>/metrics/delivery-<wave>.json`, appends the
+   same line to `~/.agent/aird-metrics/history.jsonl`, and prints the
+   comparison and fired signals:
+
+   ```bash
+   node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-metrics.mjs" \
+     ".agent/aird/<feature-slug>" --kind delivery --wave W1 --runtime codex --outcome complete \
+     --extra '{"workers_spawned": 0, "worker_reasons": {"parallelism": 0, "context": 0}, "gates": {"first_pass": 6}, "findings": {"fix_cycles": 1, "max_revision_attempts": 1, "escalations": 0}, "discovery_defects": {"impact_radius_misses": 0, "proxy_probes": 0, "oversized_workorders": 0, "consumes_gaps": 0}, "package_rework_files": 0, "plan_deviations": 0, "auto_compactions": 0}'
+   ```
+
+   Pass through `--extra` only what the orchestrator alone knows from its
+   delivery brief and slice log; a value nobody can derive stays `null`,
+   never an estimate. An escalated or paused run records the same schema
+   with `--outcome escalated`: failed runs are the most valuable records.
+2. Read the printed comparison (`tail -n 20`, same kind; same profile when at
+   least 3 records share it). Any nonzero `discovery_defects` value is a
+   **discovery-skill** signal — the proposal it produces targets the discovery
+   skill's rules, not this file.
 3. A systemic signal (fired in this run and in a compared previous run, or any
    ⚠-signal) must append a proposal to
    `~/.agent/aird-metrics/improvement-backlog.md`; a first-time signal becomes

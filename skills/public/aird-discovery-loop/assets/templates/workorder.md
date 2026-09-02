@@ -53,7 +53,7 @@ docs_to_read: []
 ## Subagent Context Package
 
 The worker starts from a fresh context and receives paths, never the parent
-transcript. Spawn it with `fork_turns: "none"`.
+transcript. Spawn it with `fork_turns: "none"` (`fork_turns`, not `fork_context`, is the supported spawn field).
 
 - Exact workorder path to pass:
 - Exact AIRD doc paths to pass:
@@ -74,6 +74,17 @@ references and nobody creates, and a file this workorder must edit to satisfy
 its own acceptance criteria while a different workorder owns the write scope.
 
 | Input | Kind | Produced by |
+|---|---|---|
+
+## Scope Evidence
+
+The declared `allowed_write_paths` and `impact_radius` must come from a search
+run against this codebase, not from a previous wave's list. One row per closed
+set this slice widens, each naming the search command that produced it;
+`None — the slice widens no closed set.` is a valid answer. The validator
+requires this section.
+
+| Declared paths | Search that produced them | Result |
 |---|---|---|
 
 ## Task Breakdown

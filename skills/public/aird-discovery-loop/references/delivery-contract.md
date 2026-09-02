@@ -75,6 +75,12 @@ reversible code work unsafe to start.
   required static, review, QA, browser, security, migration, and runtime gate
   has passed with concrete evidence.
 
+`aird-validate.mjs` enforces all three: each field must be present with a
+valid value, `ready_for_delivery`/`in_delivery`/`implementation_complete`
+require `ready_for_implementation: ready`, `verifying` requires
+`ready_for_runtime_verification: ready|not_required`, and
+`ready_for_release`/`complete` require `ready_for_release: ready`.
+
 Runtime dependency types, versions/dialects, boundaries, and intended commands
 must be known before implementation. Actual environment access and fixtures do
 not block reversible implementation. Missing runtime access blocks runtime
@@ -158,9 +164,14 @@ oversize_justification: one migration that cannot split without a half-applied s
 non-empty bounded `allowed_write_paths`, non-empty `docs_to_read`, the
 dependency graph (missing dependencies, cycles, and dependencies on
 non-implementation work), write-scope collisions inside one wave, the
-`## Consumes` producer closure below, and that `risk_ids`/`gate_ids`/`dod_ids`
-resolve to IDs the package actually defines — in workorder frontmatter and in
-every package document, so a dangling ID in prose is caught too.
+`## Consumes` producer closure below, the `## Scope Evidence` section (a
+search command per row, or an explicit `None`), and that
+`risk_ids`/`gate_ids`/`dod_ids` resolve to IDs the package actually defines —
+in workorder frontmatter and in every package document, so a dangling ID in
+prose is caught too. In `08-quality-gates.md` it checks the `Gate -> DoD
+Mapping` table and, when `01-prd.md` declares `EC-NN` edge cases, the
+`Edge Case -> Gate Mapping` table; a gate counts as defined only outside those
+two tables.
 
 ## Consumed-Input Contract
 

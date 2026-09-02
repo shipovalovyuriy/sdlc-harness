@@ -39,7 +39,9 @@ context economy are. The harness encodes them as contracts instead of habits:
 - **Budgets are contract data.** Review calls, revision attempts, context
   thresholds, and workorder sizes are machine-checked limits, not
   recommendations. A deterministic validator (`aird-validate.mjs`) enforces
-  package structure, write scopes, dependency graphs, and gate wiring.
+  package structure, write scopes, dependency graphs, readiness fields, the
+  search behind every declared write scope, and gate wiring — including that
+  every edge case the requirements declare is selected by some gate.
 - **The loop improves itself.** Every run ends with a metrics record compared
   against previous runs; recurring failure signals must produce concrete
   skill-change proposals backed by eval cases.
@@ -113,7 +115,9 @@ Both loops end with a **Process Metrics And Loop Improvement** phase
 (contract: `skills/public/aird-discovery-loop/references/process-metrics.md`):
 
 - every run appends a JSON record to a global store
-  (`~/.agent/aird-metrics/history.jsonl`) shared by both runtimes;
+  (`~/.agent/aird-metrics/history.jsonl`) shared by both runtimes; the record
+  is derived from the package by `aird-metrics.mjs`, not typed by hand, so
+  runs stay comparable field by field;
 - the run is compared against previous runs; a failure signal that fires
   twice — or a severe one (bypassed gate, vacuous pass, escalation, package
   defect found in delivery) — **must** produce a proposal in

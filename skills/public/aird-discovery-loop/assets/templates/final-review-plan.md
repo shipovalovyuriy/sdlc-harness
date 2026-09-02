@@ -28,9 +28,9 @@
 
 ## 5. Как докажем готовность
 
-- Main and negative behavior checks:
-- Real dependency/runtime checks:
-- Security, compatibility, rollback, and interface checks where applicable:
+- Проверки основного и ошибочного сценариев:
+- Проверки с настоящими зависимостями и средой выполнения:
+- Проверки безопасности, совместимости, отката и интерфейсов, где применимо:
 
 ## 6. Что именно проверит итоговая проверка
 

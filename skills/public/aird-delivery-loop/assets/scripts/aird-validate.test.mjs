@@ -62,13 +62,21 @@ function stateText({
   reviewCoverage = 'complete',
   findings = '[]',
   extraFrontmatter = '',
+  readiness = null,
 } = {}) {
+  const gated = ['ready_for_delivery', 'in_delivery', 'implementation_complete', 'verifying', 'ready_for_release', 'complete'];
+  const readinessLines = readiness ?? [
+    `ready_for_implementation: ${gated.includes(status) ? 'ready' : 'blocked'}`,
+    `ready_for_runtime_verification: ${['verifying', 'ready_for_release', 'complete'].includes(status) ? 'not_required' : 'blocked'}`,
+    `ready_for_release: ${['ready_for_release', 'complete'].includes(status) ? 'ready' : 'blocked'}`,
+  ].join('\n');
   return `---
 aird_state_version: '4.0'
 discovery_profile: ${profile}
 package_class: ${packageClass}
 status: ${status}
 active_wave: ${activeWave}
+${readinessLines}
 blockers: ${blockers}
 review_calls_used: ${reviewCallsUsed}
 finding_cutoff: ${findingCutoff}
@@ -103,6 +111,7 @@ function workorderText({
   body = 'Implement one coherent behavior.',
   consumes = null,
   negativeCases = null,
+  scopeEvidence = 'None — the fixture widens no closed set.',
 } = {}) {
   const taskLines = Array.from({ length: tasks }, (_, index) => `${index + 1}. ${body} (${index + 1})`).join('\n');
   const consumesSection = consumes === null
@@ -134,6 +143,10 @@ ${extraFrontmatter}---
 ## Consumes
 
 ${consumesSection}
+
+## Scope Evidence
+
+${scopeEvidence}
 
 ## Task Breakdown
 
@@ -197,7 +210,9 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+let cases = 0;
 function assertResult(name, result, expectedCode, expectedText = null) {
+  cases += 1;
   assert(result.code === expectedCode, `${name}: exit ${result.code}, expected ${expectedCode}\n${result.stdout}\n${result.stderr}`);
   assert(result.parsed, `${name}: validator did not return JSON\n${result.stdout}\n${result.stderr}`);
   if (expectedText) {
@@ -1047,7 +1062,66 @@ wave_outcomes:
     );
   }
 
-  console.log('aird-validate tests: PASS (72 cases)');
+  // Readiness fields are contract data; a status may not claim a stage nobody
+  // marked ready.
+  {
+    const { packageDir } = makeRepository('readiness-fields', [{ id: 'WO-01' }]);
+    setState(packageDir, { readiness: '' });
+    assertResult('undeclared readiness fields are surfaced', run(packageDir), 0, 'declares no `ready_for_implementation:`');
+    assertResult('and they are fatal under --strict', run(packageDir, ['--strict']), 1);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'in_delivery', activeWave: 'W1', readiness: 'ready_for_implementation: blocked\nready_for_runtime_verification: blocked\nready_for_release: blocked' });
+    assertResult('in_delivery without implementation readiness is rejected', run(packageDir), 1, 'requires STATE.md ready_for_implementation: ready');
+    setState(packageDir, { status: 'verifying', activeWave: 'W1', readiness: 'ready_for_implementation: ready\nready_for_runtime_verification: blocked\nready_for_release: blocked' });
+    assertResult('verifying without runtime readiness is rejected', run(packageDir), 1, 'requires STATE.md ready_for_runtime_verification: ready|not_required');
+    setState(packageDir, { status: 'in_delivery', activeWave: 'W1', readiness: 'ready_for_implementation: maybe\nready_for_runtime_verification: blocked\nready_for_release: blocked' });
+    assertResult('an unknown readiness value is rejected', run(packageDir), 1, 'ready_for_implementation must be one of blocked|ready');
+    setState(packageDir, { status: 'in_delivery', activeWave: 'W1' });
+    assertResult('consistent readiness fields pass', run(packageDir), 0);
+  }
+
+  // Scope Evidence: declared write paths come from a search, not from memory.
+  {
+    const { packageDir } = makeRepository('scope-evidence', [{ id: 'WO-01', scopeEvidence: '' }]);
+    assertResult('a missing Scope Evidence section is surfaced', run(packageDir), 0, 'has no `## Scope Evidence` section');
+    assertResult('and it is fatal under --strict', run(packageDir, ['--strict']), 1);
+    const path = join(packageDir, 'workorders', 'WO-01.md');
+    writeFileSync(path, workorderText({ id: 'WO-01', scopeEvidence: '| Declared paths | Search that produced them | Result |\n|---|---|---|\n| the three pins | from the previous wave | 3 files |' }));
+    assertResult('a row without a search command is surfaced', run(packageDir), 0, 'names no search command');
+    writeFileSync(path, workorderText({ id: 'WO-01', scopeEvidence: '| Declared paths | Search that produced them | Result |\n|---|---|---|\n| the three pins | `rg -n "EXPECTED_COUNT ==" src/ tests/` | 3 files |' }));
+    const searched = run(packageDir);
+    assertResult('a searched scope passes', searched, 0);
+    assert(![...searched.parsed.errors, ...searched.parsed.warnings].some((message) => message.includes('Scope Evidence')), 'a searched scope was still reported');
+  }
+
+  // Edge case -> gate mapping: every EC-NN the PRD declares is selected by a gate.
+  {
+    const { packageDir } = makeRepository('edge-case-gates', [{ id: 'WO-01', gateIds: ['G-01'], dodIds: ['DOD-01'] }]);
+    writeFileSync(join(packageDir, '01-prd.md'), `${baselineContent['01-prd.md']}\n### Edge Cases\n\n| ID | Case | Expected behavior |\n|---|---|---|\n| EC-01 | queue is empty | an empty list with a flag |\n| EC-02 | duplicate submit | second submit is ignored |\n`);
+    writeFileSync(join(packageDir, '09-dod.md'), `${baselineContent['09-dod.md']}\nDOD-01\n`);
+    const gates = (mapping) => `# Gates\n\nG-01 runs the API tests.\n\n### Gate -> DoD Mapping\n\n| Gate | Protects DoD item | Level |\n|---|---|---|\n| G-01 | DOD-01 | functional |\n${mapping}`;
+    writeFileSync(join(packageDir, '08-quality-gates.md'), gates(''));
+    assertResult('a PRD with edge cases and no mapping table is surfaced', run(packageDir), 0, 'has no `Edge Case -> Gate Mapping` table');
+    writeFileSync(join(packageDir, '08-quality-gates.md'), gates('\n### Edge Case -> Gate Mapping\n\n| Edge case | Gate | Selector proof |\n|---|---|---|\n| EC-01 | G-01 | -k empty_queue selects test_empty_queue |\n'));
+    assertResult('an unselected edge case is surfaced', run(packageDir), 0, 'EC-02 is declared in 01-prd.md but no gate selects it');
+    writeFileSync(join(packageDir, '08-quality-gates.md'), gates('\n### Edge Case -> Gate Mapping\n\n| Edge case | Gate | Selector proof |\n|---|---|---|\n| EC-01 | G-01 | -k empty_queue |\n| EC-02 | G-07 | -k duplicate |\n'));
+    assertResult('a mapping onto an undefined gate is surfaced', run(packageDir), 0, 'references G-07, which 08-quality-gates.md does not define');
+    writeFileSync(join(packageDir, '08-quality-gates.md'), gates('\n### Edge Case -> Gate Mapping\n\n| Edge case | Gate | Selector proof |\n|---|---|---|\n| EC-01 | G-01 | -k empty_queue |\n| EC-02 | G-01 | -k duplicate |\n'));
+    const selected = run(packageDir);
+    assertResult('fully selected edge cases pass', selected, 0);
+    assert(![...selected.parsed.errors, ...selected.parsed.warnings].some((message) => message.includes('Edge Case') || message.includes('EC-')), 'selected edge cases were still reported');
+  }
+
+  // Non-functional targets may be stated in Russian; the gate reads both.
+  {
+    const { packageDir } = makeRepository('deep-nfr-russian', [{ id: 'WO-01' }], { profile: 'deep' });
+    assertResult('a deep package with no targets is surfaced', run(packageDir), 0, 'states no non-functional targets');
+    writeFileSync(join(packageDir, '04-trd.md'), '# ТР\n\nБюджет задержки: 200 мс на запрос при ожидаемом масштабе 50 запросов в секунду.\n');
+    const result = run(packageDir);
+    assert(![...result.parsed.errors, ...result.parsed.warnings].some((message) => message.includes('non-functional')), 'Russian non-functional targets were not recognised');
+  }
+
+  console.log(`aird-validate tests: PASS (${cases} cases)`);
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

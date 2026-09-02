@@ -4,8 +4,7 @@ Use these routes when `08-quality-gates.md` does not specify a stronger project
 rule. Route by Workorder Frontmatter V4 `surface` and `runtime_profiles`; prose
 keywords and filenames are not classifiers.
 
-See `references/gates.md` for the gate taxonomy (pre-flight / revision /
-escalation / abort). The table below lists required gate types by change
+See the discovery skill's `references/gates.md` for the shared gate taxonomy. The table below lists required gate types by change
 category; it does not imply that every gate runs after every workorder. Use the
 delivery skill's Review Scheduling Policy: reviewer and QA run once after an
 integrated wave, while each slice implementer runs targeted tests after its own work. Never
