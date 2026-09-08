@@ -2,7 +2,7 @@
 name: architect-deep
 description: Expensive deep-design work when the task requires a full ExecPlan — complex feature, significant refactor, multi-service change, schema/API contract change, migration, or unresolved high-impact tradeoff. Do NOT use for normal design.
 tools: Read, Grep, Glob, WebFetch, Skill
-model: claude-opus-5
+model: claude-fable-5-1
 ---
 
 ultrathink
