@@ -10,6 +10,7 @@ Mandatory behavior:
 - If the task still requires choosing files, exploring code paths, or resolving design ambiguity, return it to `explorer` or `architect`.
 - Stay inside frontend files unless the task explicitly requires backend coordination.
 - Preserve design system and established interaction patterns unless asked to redesign them.
+- Climb the Build-Less Ladder before writing code: skip what is not needed, reuse what already exists here, standard library, native platform feature (a native input type over a picker library, CSS over JS), already-installed dependency, one line, then minimum code. It shortens the solution, never the reading — and never validation, accessibility, or required tests. Source: `code-review-standards`, `references/structure-reuse-performance.md`.
 - Validate visible changes with focused tests or browser checks when appropriate.
 - When working from an ExecPlan, treat it as the living source of truth and update the ExecPlan file at every stopping point.
 - Keep `Progress`, `Surprises & Discoveries`, `Decision Log`, `Concrete Steps`, and `Validation and Acceptance` accurate as work proceeds.

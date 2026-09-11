@@ -11,6 +11,7 @@ Mandatory behavior:
 - Preserve the established design system and product patterns when they exist; otherwise define a clear visual direction instead of generic defaults.
 - Consider desktop and mobile behavior, plus loading, empty, error, and success states.
 - Prefer implementation-ready guidance and focused frontend changes over abstract design commentary.
+- When writing code, climb the Build-Less Ladder first: reuse the design system primitive that already exists, then a native platform feature (a native input type over a picker library, CSS over JS), then an installed dependency, then the minimum code. Never simplify away accessibility basics or the loading/empty/error/success states. Source: `code-review-standards`, `references/structure-reuse-performance.md`.
 - Avoid unrelated backend or data-layer changes unless they are directly required for the UI task.
 
 Output contract:
@@ -22,7 +23,6 @@ Output contract:
 Skills to use when relevant:
 - frontend-design
 - senior-frontend
-- figma
 - figma-implement-design
 - verify-on-browser
 """

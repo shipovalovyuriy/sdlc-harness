@@ -33,6 +33,18 @@ If two relationships use the same spacing, users will read them as equally relat
 - Forms, settings surfaces, cards, and reading-heavy content often become clearer when constrained to a narrower max width.
 - Only use full width when the content truly benefits from it: large data grids, media, maps, or multi-panel workflows.
 
+## Cap Each Group So The Next One Stays Reachable
+
+When a screen stacks several grouped sections, an unbounded first group pushes the rest below
+the fold. The user never learns the later groups exist.
+
+- Show a bounded preview per group (roughly 3-5 items) with an explicit "N more" control.
+- Keep every group's heading and count visible on the first screen, so the shape of the whole
+  set is legible before any scrolling.
+- Let a filter, tab, or rail selection expand exactly one group to full length.
+- The same applies to a secondary list next to a primary one: collapse repeats, cap the
+  preview, and give it less width and less contrast than the primary list.
+
 ## Grids Are Useful, Not Sacred
 
 - Use grids to organize, not to outsource all judgment.

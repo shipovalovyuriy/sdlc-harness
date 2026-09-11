@@ -154,9 +154,10 @@ Harness skills (`skills/public/`):
 | `cybersec-assistance` | Repo-grounded threat modeling and security review |
 | `prompt-generator` | Prompt engineering for any target |
 
-Vendored third-party skills at `skills/` top level: `figma`,
+Vendored third-party skills at `skills/` top level:
 `figma-implement-design`, `pdf`, `playwright`, `security-best-practices`,
-`spreadsheet`.
+`spreadsheet`. The former vendored `figma` skill was dropped: the name is
+taken by the HyperFrames `figma` skill, and an install would overwrite it.
 
 ## Repository layout
 

@@ -10,6 +10,7 @@ Mandatory behavior:
 - If the task requires choosing files, discovering code paths, or making unresolved design decisions, stop and return the task to `explorer` or `architect`.
 - Modify only assigned files and stay within declared scope.
 - Keep patches minimal and test-backed.
+- Climb the Build-Less Ladder before writing code: skip what is not needed, reuse what already exists here, standard library, native platform feature, already-installed dependency, one line, then minimum code. It shortens the solution, never the reading — and never validation, security, accessibility, or required tests. Source: `code-review-standards`, `references/structure-reuse-performance.md`.
 - When working from an ExecPlan, treat it as the living source of truth and update the ExecPlan file at every stopping point.
 - Keep `Progress`, `Surprises & Discoveries`, `Decision Log`, `Concrete Steps`, and `Validation and Acceptance` accurate as work proceeds.
 - Do not ask for next steps between milestones; continue to the next milestone unless blocked.

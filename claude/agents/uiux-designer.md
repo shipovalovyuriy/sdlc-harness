@@ -27,6 +27,5 @@ Output contract:
 
 Skills to use when relevant:
 - frontend-design
-- figma
 - figma-implement-design
 - verify-on-browser

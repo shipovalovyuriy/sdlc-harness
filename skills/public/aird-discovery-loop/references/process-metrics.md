@@ -1,9 +1,9 @@
 # AIRD Process Metrics And Continuous Improvement Contract
 
 This is the canonical contract for the end-of-loop improvement phase that both
-`$aird-discovery-loop` and `$aird-delivery-loop` run. Its purpose is the same
+`aird-discovery-loop` and `aird-delivery-loop` run. Its purpose is the same
 "flagged twice becomes a rule" mechanism that mature SDLC playbooks apply to
-`AGENTS.md`: every loop run leaves a machine-readable metrics record, the
+the project instructions file: every loop run leaves a machine-readable metrics record, the
 current run is compared against previous AIRD runs, and any **systemic** failure
 signal must produce a concrete skill-change proposal backed by an eval case.
 Without this phase every delivery learns from zero; with it the loop itself is
@@ -47,10 +47,15 @@ The record is produced by
 `aird-delivery-loop/assets/scripts/aird-metrics.mjs`, never typed by hand:
 
 ```bash
-node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-metrics.mjs" \
+node "<skills-dir>/aird-delivery-loop/assets/scripts/aird-metrics.mjs" \
   ".agent/aird/<slug>" --kind discovery|delivery [--wave W1] --runtime claude|codex \
   [--outcome complete|escalated|abandoned] [--extra '<json>'] [--dry-run] [--json]
 ```
+
+`<skills-dir>` is `${CODEX_HOME:-$HOME/.codex}/skills/public` under Codex and
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills` under Claude Code; each loop's
+SKILL.md carries the resolved command. This file stays runtime-neutral so both
+installed copies are byte-identical.
 
 It derives every field it can from the package (`STATE.md` frontmatter and
 slice index, `evidence/state-archive.md`, `.continue-here.md`, workorders,
@@ -251,7 +256,7 @@ Delivery:
   (route the proposal at the *discovery* skill: the defects were born in the
   package, the code only exposed them);
 - `(by_class.test-coverage + by_class.evidence) / findings.total >= 0.5` (the
-  "a test counts only if" rule in `$code-review-standards` Reviewer Mode item
+  "a test counts only if" rule in `code-review-standards` Reviewer Mode item
   9 was not applied by the author or the reviewer);
 - the top `findings.by_class` slug equals the top slug of any previous run.
 

@@ -9,6 +9,11 @@ Read this before final delivery. If the design depends on several of these mista
 - Making every section equally loud
 - Giving several actions "primary" treatment on the same surface
 - Using borders everywhere instead of grouping with spacing and background contrast
+- Stacking grouped sections at full length, so the first group buries every group below it
+- Placing two lists side by side when one of them is clearly secondary, which hands noise the
+  same visual weight as the primary work
+- Rendering repeated identical records as separate rows instead of collapsing them into one
+  row with a count
 
 ## Hierarchy Anti-Patterns
 

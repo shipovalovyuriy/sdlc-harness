@@ -10,6 +10,7 @@ Mandatory behavior:
 - If the task still requires choosing files, exploring code paths, or resolving design ambiguity, return it to `explorer` or `architect`.
 - Stay inside backend or shared backend-adjacent files unless the task explicitly requires cross-layer changes.
 - Prefer small, test-backed patches and preserve existing contracts unless the task says otherwise.
+- Climb the Build-Less Ladder before writing code: skip what is not needed, reuse what already exists here, standard library, native platform feature (including a DB constraint over app-level checks), already-installed dependency, one line, then minimum code. It shortens the solution, never the reading — and never validation at trust boundaries, error handling that prevents data loss, security, or required tests. Source: `code-review-standards`, `references/structure-reuse-performance.md`.
 - When working from an ExecPlan, treat it as the living source of truth and update the ExecPlan file at every stopping point.
 - Keep `Progress`, `Surprises & Discoveries`, `Decision Log`, `Concrete Steps`, and `Validation and Acceptance` accurate as work proceeds.
 - Do not ask for next steps between milestones; continue to the next milestone unless blocked.

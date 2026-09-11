@@ -9,7 +9,27 @@ CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
 
 mkdir -p "$CODEX_HOME/skills" "$CODEX_HOME/agents"
 
-cp -R "$ROOT_DIR/skills/." "$CODEX_HOME/skills/"
+# A skill directory that is a symlink belongs to another installer (for
+# example HyperFrames links its skills between runtimes): never write through it.
+copy_skill() {
+  if [[ -L "$2" ]]; then
+    echo "SKIP $(basename "$2"): $2 is a symlink managed elsewhere" >&2
+    return
+  fi
+  mkdir -p "$2"
+  cp -R "$1/." "$2/"
+}
+
+for src in "$ROOT_DIR"/skills/*/; do
+  name="$(basename "$src")"
+  if [[ "$name" == "public" ]]; then
+    for pub in "$ROOT_DIR"/skills/public/*/; do
+      copy_skill "${pub%/}" "$CODEX_HOME/skills/public/$(basename "$pub")"
+    done
+  else
+    copy_skill "${src%/}" "$CODEX_HOME/skills/$name"
+  fi
+done
 cp "$ROOT_DIR"/agents/*.toml "$CODEX_HOME/agents/"
 
 VALIDATOR="$CODEX_HOME/skills/.system/skill-creator/scripts/quick_validate.py"
