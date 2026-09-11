@@ -1,3 +1,10 @@
+---
+id: F-NNNN
+class: wiring            # fixed vocabulary from process-metrics.md
+root_cause: code         # code | workorder | intent
+closed: false
+---
+
 # Finding Note
 
 - Finding: <F-NNNN — concise transport/wiring residual>

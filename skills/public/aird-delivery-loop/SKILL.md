@@ -405,6 +405,10 @@ Required gates:
 
 Verifier context diet: a reviewer/QA agent receives the wave's diff scope, the workorder paths **for that wave only**, and the DoD lines its gate protects — not the whole `workorders/` dir, not `STATE.md` history, not the full package. The reviewer works **from the diff**: `git diff <base> -- <paths>` hunks first, opening only the specific line ranges needed to judge a hunk in context. Reading whole source files via `nl -ba`/full `sed` ranges is the reviewer equivalent of chunk-polling. Runtime verification is a separate execution responsibility and cannot be replaced by diff review.
 
+Read order is part of the diet: the reviewer traces the hunks **before** it opens the workorder, DoD lines, or gate mapping, then reads those and tries to falsify each checkable claim against the trace. The workorder is the change's own account of itself — testimony, not evidence — and a claim read first steers where the reviewer looks. This is an ordering rule inside the existing pass, not a second reviewer.
+
+Test-coverage verdicts follow the "a test counts only if" rule in `$code-review-standards` Reviewer Mode: a test that did not run, or whose assertion cannot observe the changed output, does not close a `test-coverage` or `evidence` finding. Those two classes were half of all classified delivery findings; the rule is what stops them from being re-found on every wave.
+
 Every verification pass must check four levels where applicable: **exists, substantive, wired, functional**. File existence alone is not implementation.
 
 **Fail-closed rule:** a required gate is `pass` only when its expected checks actually executed and produced concrete evidence. Exit code 0 alone is insufficient: record executed, passed, failed, and skipped counts or an equivalent named assertion list. Any required check reported as skipped, not run, unavailable, blocked, or unverified makes the gate `blocked-no-evidence`, even when the command exits 0. Never translate this into `PASS with residual risk`, `evidence debt`, `wired-but-skipped`, or a reviewer waiver. Only the user may explicitly accept a required-gate waiver; a waiver keeps delivery `paused`/`NO-GO` and cannot produce `status: complete`. Record the exact command, runtime dependencies, evidence pointer, and DoD line next to every gate result.
@@ -476,7 +480,14 @@ If a live preview is unavailable, a `qa` review against the UI spec may record u
 
 For each verification finding:
 
-1. Classify severity and affected DoD item.
+1. Classify severity, affected DoD item, `class:` from the fixed finding
+   vocabulary, and `root_cause:` — `code` when the accepted workorder was
+   sufficient and the implementation deviated, `workorder` when the
+   workorder/DoD/gate was silent or wrong on the point, `intent` when the
+   user's request itself did not settle it. All three go into the finding
+   file's frontmatter; the metrics script reads nothing else. A `workorder`
+   or `intent` root cause still gets fixed here — it changes what the
+   improvement phase learns, never the routing.
 2. For a transport/wiring residual that only restores an already accepted
    contract (shared error mapping, route/export registration, import, or an
    equivalent one-location closure), create `finding-notes/F-NNNN.md` from

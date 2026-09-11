@@ -38,7 +38,7 @@ under it in Russian.
 
 | Kind | Examples |
 |---|---|
-| Frontmatter keys and enum values | every key in `STATE.md`, workorder, `03-risk-register.md`, `09-dod.md`, `10-*-verification.md` frontmatter; values such as `ready`, `blocked`, `not_required`, `sealed`, `proven`, `unproven`, `refuted`, `routine`, `proactive_handoff`, `hard_stop` |
+| Frontmatter keys and enum values | every key in `STATE.md`, workorder, `03-risk-register.md`, `09-dod.md`, `10-*-verification.md`, `fix-workorders/F-NNNN.md`, `finding-notes/F-NNNN.md` frontmatter; values such as `ready`, `blocked`, `not_required`, `sealed`, `proven`, `unproven`, `refuted`, `routine`, `proactive_handoff`, `hard_stop`, and the finding `root_cause` values `code`, `workorder`, `intent` |
 | Section headings the validator locates | `## Artifact Progress`, `## Current Wave Slice Index`, `### Gate -> DoD Mapping`, `### Edge Case -> Gate Mapping`, `## Task Breakdown`, `## Consumes`, `## Scope Evidence`, `## Shared Error And Public Wiring Pre-flight`, `## Verification`, `## Must Haves` |
 | Field labels inside those sections | the four pre-flight labels (`Error/public surface introduced or changed`, `Shared service error renderer/mapper`, `Public route/export/registration root`, `Evidence command`); `Negative/edge cases:` |
 | Table tokens | `Kind` values `file`, `artifact`, `config`, `data`, `code`; `Produced by` values `exists-in-repo`, `release-binding`, `none`; the explicit `None.` answer |

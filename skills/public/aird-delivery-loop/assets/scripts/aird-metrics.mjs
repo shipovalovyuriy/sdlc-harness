@@ -31,6 +31,7 @@ import {
   collectIds,
 } from './aird-contract.mjs';
 
+const ROOT_CAUSES = new Set(['code', 'workorder', 'intent']);
 const FINDING_CLASSES = new Set(['correctness', 'wiring', 'contract', 'data', 'security', 'test-coverage', 'ux', 'performance', 'docs', 'scope', 'evidence', 'process', 'other']);
 
 const args = process.argv.slice(2);
@@ -82,6 +83,17 @@ function classCounts(entries) {
     const cls = String(entry.class ?? entry.finding_class ?? '').trim().toLowerCase();
     if (!FINDING_CLASSES.has(cls)) continue;
     counts[cls] = (counts[cls] ?? 0) + 1;
+    seen += 1;
+  }
+  return seen ? counts : null;
+}
+function rootCauseCounts(entries) {
+  const counts = {};
+  let seen = 0;
+  for (const entry of entries) {
+    const cause = String(entry.root_cause ?? '').trim().toLowerCase();
+    if (!ROOT_CAUSES.has(cause)) continue;
+    counts[cause] = (counts[cause] ?? 0) + 1;
     seen += 1;
   }
   return seen ? counts : null;
@@ -191,6 +203,8 @@ if (kind === 'discovery') {
     findings: {
       total: findingEntries.length,
       by_class: classCounts(findingEntries),
+      by_root_cause: rootCauseCounts(findingEntries),
+      unclassified: findingEntries.filter((entry) => !FINDING_CLASSES.has(String(entry.class ?? entry.finding_class ?? '').trim().toLowerCase())).length,
       fix_cycles: null,
       max_revision_attempts: null,
       escalations: null,
@@ -253,6 +267,13 @@ if (kind === 'discovery') {
   if (record.findings?.fix_cycles >= 2 || record.findings?.max_revision_attempts >= 3) signals.push('findings.fix_cycles >= 2 or max_revision_attempts >= 3');
   if (record.package_rework_files > 0) signals.push('package_rework_files > 0');
   if (record.hard_stops > 0 || record.auto_compactions > 0) signals.push('hard_stops or auto_compactions > 0');
+  if (record.findings?.total > 0 && record.findings?.unclassified > 0) signals.push(`⚠ findings.unclassified = ${record.findings.unclassified} of ${record.findings.total} (finding files lack class/root_cause frontmatter; the improvement phase is blind)`);
+  const causes = record.findings?.by_root_cause ?? {};
+  const upstream = (causes.workorder ?? 0) + (causes.intent ?? 0);
+  const classified = Object.values(causes).reduce((sum, value) => sum + value, 0);
+  if (classified > 0 && upstream / classified >= 0.5) signals.push(`⚠ ${upstream}/${classified} findings born upstream of the code (root_cause workorder/intent) — route the proposal at the discovery skill`);
+  const verificationShare = ((record.findings?.by_class?.['test-coverage'] ?? 0) + (record.findings?.by_class?.evidence ?? 0)) / Math.max(record.findings?.total ?? 0, 1);
+  if (record.findings?.total > 0 && verificationShare >= 0.5) signals.push(`test-coverage + evidence are ${Math.round(verificationShare * 100)}% of findings (verification-gap rule not applied by author or reviewer)`);
   const firstPass = Number.isFinite(record.gates?.first_pass) ? record.gates.first_pass / Math.max(record.gates.total ?? 0, 1) : null;
   const historyMedian = median(comparable.map((entry) => (Number.isFinite(entry.gates?.first_pass) ? entry.gates.first_pass / Math.max(entry.gates.total ?? 0, 1) : NaN)));
   if (firstPass !== null && historyMedian !== null && firstPass < historyMedian) signals.push(`gates first-pass rate ${firstPass.toFixed(2)} below history median ${historyMedian.toFixed(2)}`);

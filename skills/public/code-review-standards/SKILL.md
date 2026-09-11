@@ -51,7 +51,7 @@ When coding as `backend-worker`, `frontend-worker`, or `worker`:
 5. Decide where the code belongs, what existing functions/types/hooks/services to reuse, and whether optimization is required by the workorder or current code path.
 6. If adding a tool, dependency, linter, formatter, SAST check, or major library, consult `references/community-awesome.md` as discovery and then verify the chosen tool from primary sources.
 7. Implement the smallest scoped change.
-8. Run the workorder's required checks.
+8. Run the workorder's required checks. A test covers the change only if it ran and an assertion observes the changed output, branch, or contract (see Reviewer Mode item 9 for what does not count).
 9. Report changed files, commands run, standards-sensitive decisions, reuse/structure choices, and blockers.
 
 If the workorder conflicts with the standards or project conventions, stop and report the conflict instead of silently choosing a new design.
@@ -60,7 +60,7 @@ If the workorder conflicts with the standards or project conventions, stop and r
 
 When reviewing:
 
-1. Read the diff, workorder, DoD, quality gates, and relevant standards.
+1. Read the diff hunks first and trace them (paths, callers, implicit branches, deleted handling). Open the workorder, DoD, quality gates, and relevant standards only after the trace, then try to falsify each checkable claim they make against what you traced. The workorder is testimony, not evidence.
 2. Lead with findings ordered by severity.
 3. Cite the file/line, the violated local convention or standards principle, and the behavioral risk.
 4. Avoid style-only comments already enforced by formatter/linter unless the tooling is missing or misconfigured.
@@ -68,5 +68,6 @@ When reviewing:
 6. Run an over-engineering pass against the Build-Less Ladder and name what to cut: reinvented standard library, a dependency doing what the platform already does, an abstraction with one implementation, config nobody sets, dead flexibility, or the same logic in fewer lines. One line per finding: location, what to cut, what replaces it. Say the diff is already lean when there is nothing to cut, and never flag a required test or a single smoke check as bloat.
 7. Use `community-awesome.md` only to suggest missing tooling or alternatives; do not treat community curation as a pass/fail rule.
 8. Mark a finding blocking only when it can affect correctness, security, data integrity, compatibility, reliability, UX/accessibility, test validity, maintainability, or performance of the delivered change.
+9. Judge test coverage by one question: if the changed behavior broke where it is used, would a check fail? A test counts only if it ran and an assertion observes the changed output, branch, or contract. These do not count: a test that was not executed; success/no-throw/snapshot-only checks; assertions on mock or log calls; tests that mock away the integration under change; e2e paths that pass through without checking the changed output; `expect(x ?? DEFAULT)`-style assertions that pass when the value is missing; stale fixtures. Read the test before claiming what it covers, and search by symbol and import before claiming no test exists. Do not report cases the compiler or type-checker already enforces, or untested legacy code the change did not touch.
 
 Use `assets/review-report.md` when a structured review artifact is needed.

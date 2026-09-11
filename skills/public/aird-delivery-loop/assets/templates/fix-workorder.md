@@ -1,4 +1,18 @@
+---
+id: F-NNNN
+class: correctness       # fixed vocabulary from process-metrics.md
+root_cause: code         # code | workorder | intent
+closed: false
+---
+
 # Fix Workorder Template
+
+The frontmatter is machine-read by `aird-metrics.mjs`; without it the run's
+`findings.by_class` and `findings.by_root_cause` are `null` and the
+improvement phase is blind. `root_cause` names where the defect was born:
+`code` (the workorder was sufficient, the implementation deviated),
+`workorder` (the accepted workorder/DoD/gate was silent or wrong on this
+point), `intent` (the user's request itself did not settle it).
 
 Store as `fix-workorders/F-NNNN.md`, never under discovery's immutable
 `workorders/` directory. The finding ID is monotonic and is never reused.

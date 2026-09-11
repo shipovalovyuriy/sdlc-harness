@@ -48,7 +48,7 @@ The record is produced by
 
 ```bash
 node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-metrics.mjs" \
-  ".agent/aird/<slug>" --kind discovery|delivery [--wave W1] --runtime codex|codex \
+  ".agent/aird/<slug>" --kind discovery|delivery [--wave W1] --runtime claude|codex \
   [--outcome complete|escalated|abandoned] [--extra '<json>'] [--dry-run] [--json]
 ```
 
@@ -164,6 +164,8 @@ Correction procedure) triggered during this discovery.
   "findings": {
     "total": 3,
     "by_class": { "test-coverage": 1, "wiring": 2 },
+    "by_root_cause": { "code": 2, "workorder": 1, "intent": 0 },
+    "unclassified": 0,
     "fix_cycles": 1,
     "max_revision_attempts": 2,
     "escalations": 0
@@ -192,6 +194,14 @@ Definitions:
   dir when versioned, else count edited package files from slice records.
 - `plan_deviations` — workorders whose implementation recorded a contract
   deviation in AIRD notes.
+- `findings.by_root_cause` — where each finding was born, from the finding
+  file's `root_cause:` frontmatter: `code` (workorder sufficient,
+  implementation deviated), `workorder` (accepted workorder/DoD/gate silent or
+  wrong on the point), `intent` (the user's request did not settle it).
+  `unclassified` counts finding files whose frontmatter carries no valid
+  `class:`; the frontmatter is mandatory in `finding-note.md` and
+  `fix-workorder.md` because the script derives nothing from prose. Six of the
+  first eight delivery records had `by_class: null` for exactly this reason.
 - `discovery_defects` — defects delivery found in the *package*, not the code:
   impact-radius locks the search missed, existential probes that turned out to
   be proxies, workorders failing the sizing gate at pre-flight, unresolved
@@ -235,6 +245,14 @@ Delivery:
 - `findings.fix_cycles >= 2` or `findings.max_revision_attempts >= 3`;
 - `package_rework_files > 0`;
 - `hard_stops > 0` or `auto_compactions > 0` (context economy failed);
+- ⚠ `findings.unclassified > 0` (finding files without frontmatter — the
+  record cannot be compared, fix the files before recording);
+- ⚠ `(by_root_cause.workorder + by_root_cause.intent) / classified >= 0.5`
+  (route the proposal at the *discovery* skill: the defects were born in the
+  package, the code only exposed them);
+- `(by_class.test-coverage + by_class.evidence) / findings.total >= 0.5` (the
+  "a test counts only if" rule in `$code-review-standards` Reviewer Mode item
+  9 was not applied by the author or the reviewer);
 - the top `findings.by_class` slug equals the top slug of any previous run.
 
 **Systemic rule (the "twice" rule):** a signal that fires in the current run
