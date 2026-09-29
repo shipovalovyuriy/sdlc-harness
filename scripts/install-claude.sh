@@ -74,6 +74,10 @@ rewrite() {
     s{`fork_turns`, not `fork_context`, is the supported spawn field\.}{Claude Code subagents always start with a clean context; there is no fork field to set.}g;
     s{, and spawn with `fork_turns: "none"`\.}{. Claude Code subagents always start with a clean context; there is no fork field to set.}g;
     s{Spawn it with `fork_turns: "none"`\.}{Claude Code subagents always start with a clean context; there is no fork field to set.}g;
+    s{High-effort models go to judgment roles}{Opus-class models go to judgment roles}g;
+    s{goes to the lighter configured agents \(`docs`, `worker`, `explorer`\) at low or medium effort\. A subagent that inherits the orchestrator.s model and effort is}{runs on a cheaper model: pass `model: sonnet` when spawning a `general-purpose` or `docs` agent for it (the installed `explorer`, `docs`, and worker agents already default to Sonnet). A subagent that inherits the orchestrator\x27s model by default is}g;
+    s{on a lighter configured agent \(`docs`/`worker`, low or medium effort\)}{on a cheaper model (`model: sonnet`)}g;
+    s{\(browser preview\)}{(browser pane)}g;
     s{(?<![a-zA-Z_])agent_type}{subagent_type}g;
     s{--runtime codex\b(?!\|)}{--runtime claude}g;
     s{\bCodex\b}{Claude Code}g unless $ENV{KEEP_CODEX_WORD};

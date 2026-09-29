@@ -100,13 +100,9 @@ evidence here. Do not leave this section blank and silently design from scratch.
 
 ## Prototype Requirements
 
-- Mock data needed:
-- Prototype environment type: existing application / Storybook / local mock route / existing playground / static HTML / other
-- Why this host preserves the application design:
-- Design-system components/tokens that must be reused:
-- Current application screenshots/viewports to compare:
-- Allowed fidelity gaps:
-- States to render:
-- Business assumptions to test:
-- UX questions to resolve:
-- Acceptance signal before delivery:
+One-pass sketch only (SKILL phase 4.5): no QA or fidelity audit here.
+
+- Existing screen to reuse or extend:
+- Host (existing app route with mocks / static HTML):
+- Screens and the few states to render:
+- UX question the user must answer:

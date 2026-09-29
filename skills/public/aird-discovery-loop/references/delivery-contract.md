@@ -45,7 +45,7 @@ Choose one profile at intake. Risk and irreversibility override change size.
 |---|---|---|
 | `lite` | Localized reversible change in one ownership boundary | At most 5 implementation/spike workorders |
 | `standard` | Material cross-layer or single-service contract | At most 12 implementation/spike workorders |
-| `deep` | Security, infrastructure, migrations, multi-service/API/data, or high-impact rollout | At most 25 total; no accepted wave dependency closure may exceed 12 |
+| `deep` | Security, infrastructure, migrations, multi-service/API/data, or high-impact rollout | At most 25 total; an accepted wave dependency closure may use the whole budget (≤ 25) |
 
 These are limits, not quotas. Do not create workorders to fill a range. When a
 deep package needs more than 25 executable workorders, finish a value-producing

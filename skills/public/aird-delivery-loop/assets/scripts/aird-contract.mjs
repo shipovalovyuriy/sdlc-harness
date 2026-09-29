@@ -462,8 +462,8 @@ export function acceptWave(packageDir, { wave, baseRef }) {
   if (activeCount > limits[profile]) {
     throw new Error(`${profile} profile has ${activeCount} active implementation/spike workorders; limit is ${limits[profile]}`);
   }
-  if (closure.length > 12) {
-    throw new Error(`wave ${wave} dependency closure has ${closure.length} implementation/spike workorders; limit is 12`);
+  if (closure.length > 25) {
+    throw new Error(`wave ${wave} dependency closure has ${closure.length} implementation/spike workorders; limit is 25`);
   }
 
   const existing = loadReviewManifest(packageDir);

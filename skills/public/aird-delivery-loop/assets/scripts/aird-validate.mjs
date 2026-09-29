@@ -72,6 +72,25 @@ const NON_TEST_WRITE_PATH_LIMIT = 6;
 const DOD_PER_WORKORDER_LIMIT = 3;
 const NEGATIVE_CASE_LIMIT = 10;
 
+// Reading budget. Every package document is read again by each agent that
+// touches it -- the final reviewer, every fixer, every delivery worker -- so
+// its size is paid once per read, not once per write. Across past packages the
+// median workorder is 5 KB (p75 10 KB); a 34 KB workorder restates the TRD
+// instead of pointing at a section. Limits are bytes of UTF-8, so Russian text
+// counts double per character, which is also roughly what it costs in tokens.
+// Accepted workorders and packages with an accepted wave are grandfathered:
+// the check shapes authoring, it never reopens an accepted contract.
+const WORKORDER_BYTE_LIMIT = 12 * 1024;
+const DOC_BYTE_LIMIT = 40 * 1024;
+const DOC_BYTE_LIMITS = {
+  '00-discussion-log.md': 60 * 1024,
+  '04-trd.md': 60 * 1024,
+  '05-api-contracts.md': 60 * 1024,
+  '06-data-models.md': 60 * 1024,
+};
+const SUMMARY_BYTE_LIMIT = 25 * 1024;
+const kib = (bytes) => `${Math.round(bytes / 1024)} KB`;
+
 // A probe that swapped a boundary for a double answers a different question
 // than the one the gate asked. These markers are how that shows up in an
 // honest evidence log.
@@ -245,7 +264,7 @@ if (manifest) {
     } catch (error) {
       issues.push(error.message);
     }
-    if (closure.length > 12) issues.push(`dependency closure has ${closure.length} executable workorders; limit is 12`);
+    if (closure.length > 25) issues.push(`dependency closure has ${closure.length} executable workorders; limit is 25`);
 
     const recorded = acceptance?.workorders && typeof acceptance.workorders === 'object'
       ? acceptance.workorders
@@ -928,6 +947,31 @@ for (const workorder of workorders) {
   if (workorder.negativeCaseCount > NEGATIVE_CASE_LIMIT) {
     warn(`${workorder.file}: lists ${workorder.negativeCaseCount} negative cases (soft limit ${NEGATIVE_CASE_LIMIT}); that is several slices wearing one workorder`);
   }
+}
+
+// Reading budget -- see the byte limits above for why these exist.
+for (const workorder of workorders) {
+  if (!EXECUTABLE_KINDS.has(workorder.kind) || workorder.status === 'deferred') continue;
+  if (workorder.oversizeJustification || acceptedFiles.has(workorder.file)) continue;
+  const bytes = Buffer.byteLength(workorder.text, 'utf8');
+  if (bytes > WORKORDER_BYTE_LIMIT) {
+    warn(`${workorder.file}: ${kib(bytes)} (reading budget ${kib(WORKORDER_BYTE_LIMIT)}); point at TRD/contract sections instead of restating them, or split at a real seam`);
+  }
+}
+if (acceptedFiles.size === 0) {
+  for (const file of [...filesOnDisk].filter((name) => /^\d\d-.+\.md$/.test(name)).sort()) {
+    const text = read(join(packageDir, file));
+    const bytes = Buffer.byteLength(text, 'utf8');
+    const limit = DOC_BYTE_LIMITS[file] || DOC_BYTE_LIMIT;
+    if (bytes > limit) warn(`${file}: ${kib(bytes)} (reading budget ${kib(limit)}); every reviewer, fixer and worker pays this on each read -- cut restatement, keep decisions and pointers`);
+  }
+  if (/^\s*allowed_write_paths\s*:/m.test(read(join(packageDir, '07-implementation-plan.md')))) {
+    warn('07-implementation-plan.md copies workorder frontmatter (allowed_write_paths); keep an index table only -- frontmatter is the source of truth and the validator prints waveDigest');
+  }
+}
+if (status === 'discovery' && filesOnDisk.has('DISCOVERY-SUMMARY.md')) {
+  const bytes = Buffer.byteLength(read(join(packageDir, 'DISCOVERY-SUMMARY.md')), 'utf8');
+  if (bytes > SUMMARY_BYTE_LIMIT) warn(`DISCOVERY-SUMMARY.md: ${kib(bytes)} (reading budget ${kib(SUMMARY_BYTE_LIMIT)}); it is a digest that links the package, not a second copy of it`);
 }
 
 const completedWorkorders = workorders.filter((workorder) => workorder.status === 'done' && acceptedFiles.has(workorder.file));

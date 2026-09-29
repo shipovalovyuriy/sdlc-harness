@@ -1062,6 +1062,48 @@ wave_outcomes:
     );
   }
 
+  // --- Reading budget ----------------------------------------------------------
+
+  {
+    const { packageDir } = makeRepository('reading-budget', [{ id: 'WO-01' }]);
+    const path = join(packageDir, 'workorders', 'WO-01.md');
+    const padding = `\n## Current Behavior\n\n${'Пересказ раздела TRD вместо ссылки на него. '.repeat(260)}\n`;
+    writeFileSync(path, `${readFileSync(path, 'utf8')}${padding}`);
+    writeFileSync(join(packageDir, '04-trd.md'), `# TRD\n\n${'Абзац, который уже есть в контракте. '.repeat(1800)}\n`);
+    writeFileSync(join(packageDir, '07-implementation-plan.md'), '# Plan\n\n```yaml\nid: WO-01\nallowed_write_paths: [a/one.py]\n```\n');
+    writeFileSync(join(packageDir, 'DISCOVERY-SUMMARY.md'), `# Итог\n\n${'Второй экземпляр пакета. '.repeat(1200)}\n`);
+    const result = run(packageDir);
+    assertResult('an oversized workorder is surfaced', result, 0, 'WO-01.md: 20 KB (reading budget 12 KB)');
+    assertResult('the workorder warning names its budget', result, 0, 'reading budget 12 KB');
+    assertResult('an oversized TRD is surfaced', result, 0, '04-trd.md: ');
+    assertResult('a plan that copies frontmatter is surfaced', result, 0, 'copies workorder frontmatter');
+    assertResult('an oversized discovery summary is surfaced', result, 0, 'reading budget 25 KB');
+    assertResult('the reading budget fails under --strict', run(packageDir, ['--strict']), 1);
+
+    writeFileSync(path, readFileSync(path, 'utf8').replace(
+      /^docs_to_read: .*$/m,
+      (line) => `${line}\noversize_justification: one migration that cannot be split without leaving the schema half-applied`,
+    ));
+    const justified = run(packageDir);
+    assert(
+      !justified.parsed.warnings.some((message) => message.startsWith('WO-01.md') && message.includes('reading budget')),
+      'oversize_justification did not silence the workorder reading budget',
+    );
+  }
+
+  {
+    // Accepted contracts are grandfathered: the budget shapes authoring and
+    // never reopens a wave that already passed its final review.
+    const { packageDir } = makeRepository('reading-budget-accepted', [{ id: 'WO-01' }]);
+    const path = join(packageDir, 'workorders', 'WO-01.md');
+    writeFileSync(path, `${readFileSync(path, 'utf8')}\n## Current Behavior\n\n${'Длинный принятый текст. '.repeat(700)}\n`);
+    writeFileSync(join(packageDir, '04-trd.md'), `# TRD\n\n${'Принятый абзац. '.repeat(4000)}\n`);
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    const result = run(packageDir);
+    assertResult('an accepted package is not reread against the budget', result, 0);
+    assert(!result.parsed.warnings.some((message) => message.includes('reading budget')), 'accepted contracts were checked against the reading budget');
+  }
+
   // Readiness fields are contract data; a status may not claim a stage nobody
   // marked ready.
   {

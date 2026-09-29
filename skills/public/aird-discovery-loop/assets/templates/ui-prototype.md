@@ -1,87 +1,34 @@
 # UI Prototype Template
 
-Create this during discovery for UI work before final TRD/workorders.
+A one-pass sketch on mock data so the user can see the elements and the flow.
+Not a quality gate: no QA, screenshot matrix, or fidelity audit here —
+browser and accessibility checks belong to delivery quality gates.
 
 ## Prototype Summary
 
 - Status: draft / reviewing / accepted / blocked
 - Prototype path:
 - Preview URL:
-- Owner agent:
-- Last reviewed:
-
-## Design Provenance And Fidelity
-
-- Approved design source used:
-- Current application screenshots used:
-- Shell/navigation source:
-- Design-system/token source:
-- Prototype host choice and rationale:
-
-| Prototype element | Reused application component/token/pattern | Exact source | Fidelity status (match/gap/accepted deviation) |
-|---|---|---|---|
-
-### Fidelity Gaps
-
-| Gap | Why unavoidable | User status (accepted/unconfirmed) | Delivery requirement |
-|---|---|---|---|
-
-## Goal
-
-- Business question:
-- UX question:
-- What this prototype must prove:
-- What this prototype intentionally does not prove:
-
-## Mock Data
-
-| Scenario | Data Shape | Why It Matters |
-|---|---|---|
-
-## States Covered
-
-- Happy:
-- Empty:
-- Loading:
-- Error:
-- Permission denied:
-- Partial data:
-- Edge cases:
-
-## Prototype Environment
-
-- Type: static HTML / Storybook / local mock route / existing playground / other
-- Files:
 - Run command:
-- Preview URL:
-- Browser checks:
-- Desktop screenshot comparison:
-- Mobile screenshot comparison:
+- Host and why (existing app route with mocks / static HTML):
+- Reused existing screen (if any):
 
-## User Review
+## What Is Shown
 
-| Question | Feedback | Decision |
+| Screen | States shown | Question it answers |
 |---|---|---|
 
-## Accepted Direction
+## User Verdict
 
-- Layout:
-- Flow:
-- Copy/labels:
-- Controls:
-- States:
-- Business rules:
+| Date | Verdict | Changes requested |
+|---|---|---|
 
-## Changes Required Before Delivery
+## Deliberate Deviations From The Existing UI
 
-- 
-
-Do not mark the prototype `accepted` while a material application/design-system
-mismatch is unexplained or an intentional deviation is still unconfirmed.
+- None. / <deviation — reason>
 
 ## Delivery Handoff
 
-- UI spec sections updated:
-- Workorders affected:
-- Browser/usability gates to require:
-- Prototype files safe to delete after delivery: yes / no
+- Prototype files a delivery worker must read (every source path named here
+  must appear in the accepted frontend workorders):
+- UI spec sections to follow:

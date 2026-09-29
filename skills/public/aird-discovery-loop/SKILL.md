@@ -15,6 +15,8 @@ The same token model as `$aird-delivery-loop` applies: **no long-lived all-remem
 
 - **Phase boundaries are checkpoints.** After each discovery phase (intake, discussion, recon, product/UX, risks, TRD, plan), write the outcome into the package and `STATE.md`. 
 - **The orchestrator holds decisions, not bulk.** Subagents (`explorer`, `product-analyst`, `architect`, `risk-analyst`, `uiux-designer`) read sources and write package files directly; they return verdicts, key facts, and paths — not transcripts or file dumps. The orchestrator's working memory is the running decision table plus `STATE.md`, not the docs' contents.
+- **Pay for judgment, not for typing.** High-effort models go to judgment roles — `architect`, `architect-deep`, `reviewer`, `risk-analyst`, `cybersec`. Mechanical work — document edits, finding fixes, plan/index sync, the discovery summary — goes to the lighter configured agents (`docs`, `worker`, `explorer`) at low or medium effort. A subagent that inherits the orchestrator's model and effort is the most expensive way to retype a table.
+- **Short-lived authors.** An agent re-reads its whole context on every call, so its cost grows roughly with the square of its lifetime: one author that wrote TRD, contracts, and data models in 154 calls at a 640k-token context cost 62M tokens, more than all of intake, discussion, reconnaissance, and probes together (74M). One author writes one document (or one section of a large one), is told the exact files and headings to read, and returns — budget about 40 calls and 150k context. An author that needs more was given too much: stop it and split the task, do not let it run on. Short, narrow agents are why the risk and discussion half of discovery is cheap; keep the authoring half the same shape.
 - **Runtime probing is explorer work.** ssh, kubectl, curl, deploy checks, and log reading during reconnaissance run inside a scoped `explorer` (or a dedicated recon subagent) whose findings land in `codemap.md`/AIRD docs as evidence pointers. The main session never accumulates raw remote output.
 - **Command output is bounded at the source.** Redirect raw output from every
   variable-size search, probe, typecheck, test, or build to evidence. Return
@@ -44,7 +46,7 @@ is not "thorough" — it is a half-day that delivery will have to throw away.
 
 Scale the package to the task. The full set is the ceiling, not a mandate for every feature:
 
-- User-facing work: produce the UX block (`02-*`) and follow the UI prototype gate.
+- User-facing work: produce the UX block (`02-*`) and the minimal one-pass UI prototype (phase 4.5).
 - Non-UI work (backend refactor, data/tooling change): skip the `02-*` UX block entirely — do not write a UX-framing filler. UX framing is required only for user-facing changes, same as the UI spec and prototype.
 - Small, low-risk features: keep each document concise (a short PRD, a few risk lines, a lean TRD) rather than merging files. `$aird-delivery-loop` reads `01-prd.md`, `03-risk-register.md`, `04-trd.md`, `07-implementation-plan.md`, `08-quality-gates.md`, and `09-dod.md` by name, so keep those filenames even when their content is minimal. Concise is fine; shallow is not. Note the reduced scope in `STATE.md`.
 
@@ -84,6 +86,29 @@ Use specific paths, symbols, endpoints, tables, commands, screenshots, or runtim
 
 Never mark a document complete when it only restates headings, contains generic best-practice filler, or depends on the parent chat for context.
 
+### Reading Budget
+
+Depth is not length. Every package document is read again by each agent that
+touches it — the final reviewer, every fixer, every delivery worker — so its
+size is paid once per read, not once per write. A deep package that reached
+1.6 MB (34 KB per workorder, a 150 KB summary) spent about 2.5 million tokens
+on one final review, its finding closure, and the summary. `aird-validate.mjs`
+warns — fatally under the discovery `--strict` run — before the first accepted
+wave; accepted contracts are grandfathered:
+
+| Artifact | Budget (UTF-8 bytes; a Russian letter is 2 bytes) |
+|---|---|
+| each workorder | 12 KB (past median 5 KB); `oversize_justification` is the only escape |
+| `04-trd.md`, `05-api-contracts.md`, `06-data-models.md`, `00-discussion-log.md` | 60 KB |
+| every other `NN-*.md` | 40 KB |
+| `DISCOVERY-SUMMARY.md` | 25 KB |
+
+Say a thing once and point at it. A workorder names the TRD or contract
+section it implements instead of restating it. `07-implementation-plan.md`
+keeps an index table and never copies workorder frontmatter: the copies drift
+(one package needed 31 repairs to re-sync them) and the validator already
+prints `waveDigest`.
+
 ## Discovery Phases
 
 ### 1. Intake
@@ -92,7 +117,7 @@ In a git repository, first identify the target base ref (normally the repository
 
 Create or update `00-intake.md` and initialize `STATE.md` from `assets/templates/state.md`. Two frontmatter fields are chosen here and nowhere else — `aird-validate.mjs` hard-errors without them:
 
-- `discovery_profile`: `lite` (localized reversible change, ≤5 implementation workorders), `standard` (cross-layer or single-service contract, ≤12), or `deep` (security, infrastructure, migrations, multi-service/API/data, high-impact rollout; ≤25 with no accepted closure over 12). Risk and irreversibility override change size — see `references/delivery-contract.md`.
+- `discovery_profile`: `lite` (localized reversible change, ≤5 implementation workorders), `standard` (cross-layer or single-service contract, ≤12), or `deep` (security, infrastructure, migrations, multi-service/API/data, high-impact rollout; ≤25; one accepted wave may hold the whole budget). Risk and irreversibility override change size — see `references/delivery-contract.md`.
 - `package_class`: `product` or `supporting`.
 
 Then record:
@@ -359,6 +384,8 @@ is earned by retired risk**, not spent in advance.
 
 ### 4. Product, UX, And UI Spec
 
+**Decisions before authoring.** Authoring (phases 4–7) starts after the discussion gate has locked every structural decision it can see. A new decision that changes structure mid-authoring — where a surface lives, how waves are composed, which workorder owns what — pauses authoring: let running authors finish or stop them, record the decision, update the plan index (phase 7 brief) and the affected section list, then resume with fresh authors on only the affected sections. Never patch an in-flight author with the new decision and never rewrite finished documents wholesale; that pays for every document twice and leaves a reconcile pass to pay a third time.
+
 Use `product-analyst` when available. For user-facing flows, spawn `uiux-designer` when available and load/use the `frontend-design` skill when relevant; if `uiux-designer` is not available, the main session drafts the UI spec using the `frontend-design` skill.
 
 Produce:
@@ -389,50 +416,42 @@ prototype review.
 
 The PRD and UX docs must name the target workflow, the user-visible behavior delta, the non-goals, the acceptance signals, and the risks that could make the feature feel wrong even if the code works. For non-UI technical work, the PRD can be short, but it must still explain the operational or product outcome that makes the technical change worth doing.
 
-### 4.5 UI Prototype Gate
+### 4.5 UI Prototype (minimal, one pass)
 
-For UI work, build a mock-data prototype before TRD/workorders are finalized. The goal is to validate UX and business meaning early, not to sneak production implementation into discovery.
+For UI work, draw the screens on mock data so the user can see the elements and
+the flow before TRD/workorders are finalized. This is a sketch for shared
+understanding, not a quality gate: no review rounds, no QA, no state matrix.
 
-Produce `02-ui-prototype.md` from `assets/templates/ui-prototype.md` and, when useful, a prototype under:
+- **Reuse before drawing.** First check whether an existing screen already does
+  the job (for example, an existing approve/reject queue). Extend it instead of
+  inventing a new surface; a new surface needs a one-line reason.
+- **One author, one pass.** `uiux-designer` (or the main session) renders the
+  key screens with mock data and only the states that change a decision:
+  populated, plus the one or two edge/empty/error states under discussion.
+- **Cheapest host that uses the real styles:** an existing app route with mocks,
+  or static HTML when that is disproportionately expensive. Keep the source
+  under `.agent/aird/<feature-slug>/prototype/` and record the run command.
+- **Compact, readable copy** in the user's language: short blocks, details
+  collapsed, no raw machine identifiers on screen.
+- **Show, then ask once.** The orchestrator opens the preview URL for the user
+  (browser preview) and asks one closed question: accept the direction, or what
+  to change. Batch all feedback into one revision; for a large revision start a
+  fresh agent with a short brief instead of resuming a bloated one.
+- **No `qa` subagent, screenshot matrix, fidelity comparison, or accessibility
+  audit at this stage.** Browser, responsive, and accessibility checks belong
+  to delivery quality gates on the real implementation.
+- `02-ui-prototype.md` stays short: host and run command, what is shown, the
+  user's verdict, and any deliberate deviation from the existing UI. List only
+  the prototype files a delivery worker must read — the validator requires
+  every source path named there to appear in accepted frontend workorders.
 
-```text
-.agent/aird/<feature-slug>/prototype/
-```
+If the session is non-interactive or the user does not look at the prototype,
+record the direction as `unconfirmed` in `STATE.md`/`02-ui-prototype.md` (not
+`accepted`) and stop before delivery only if the open UX question is
+load-bearing.
 
-Prototype rules:
-
-- use mocked data and realistic states from PRD/UI spec;
-- prototype inside the existing application, Storybook, local mock route, or
-  project playground when one is available; use isolated static HTML/React only
-  when the existing host is unavailable or disproportionately expensive, and
-  record that reason;
-- reuse the real design-system primitives, tokens, shell, typography, icons,
-  responsive rules, and component states whenever they are accessible; a
-  visually convenient substitute is not acceptable merely because it is
-  faster;
-- when an isolated prototype cannot import the real system, reproduce only the
-  evidenced tokens and patterns needed for the flow, cite their sources in
-  `02-ui-prototype.md`, and list every material fidelity gap;
-- do not create a new navigation shell, palette, type scale, component style,
-  or decorative motif unless the UI spec contains an accepted deviation;
-- avoid production data, real side effects, migrations, or auth changes;
-- include at least happy, empty, loading, error, permission, and edge states when relevant;
-- start or identify a preview URL when possible and validate it with a browser-capable `qa` subagent (a scoped gate, not a reviewer call — it does not count against the review budget); state screenshots are saved as files and referenced by path in `02-ui-prototype.md` — image bytes never enter the orchestrator context (the user is shown the preview URL and screenshot files, not inline dumps);
-- discuss the prototype with the user and update `00-discussion-log.md`, `02-ui-spec.md`, and `02-ui-prototype.md` until the UX/business direction is accepted.
-
-Prototype review is a product-fidelity gate as well as a flow gate. Compare the
-prototype with current application screenshots/design sources at representative
-desktop and mobile viewports. Do not mark it `accepted` while an unexplained
-shell, token, component, spacing, typography, or interaction mismatch remains.
-
-If the session is non-interactive or the user does not review the prototype, apply the same non-interactive fallback as the phase-2 discussion gate: record the direction as an `unconfirmed` assumption in `STATE.md`/`02-ui-prototype.md` (do not mark it `accepted`), and stop before delivery if the open UX/business questions are load-bearing.
-
-Do not start delivery while a UI prototype has unresolved product, flow, hierarchy, or state-model questions.
-
-Mark the prototype `accepted` only when a workorder exists that can consume it.
-UX accepted against a wave nobody has decomposed — or one sitting behind a
-blocker — is work that will be re-reviewed anyway by the time delivery reaches
-it. Keep it `reviewing`, and say in `STATE.md` which wave it is waiting on.
+Mark the prototype `accepted` only when a workorder exists that can consume it;
+until then it stays `reviewing` with the user's verdict recorded.
 
 ### 5. Risks And Assumptions
 
@@ -454,6 +473,8 @@ Each high or medium risk must be tied to one of: a locked discussion decision, a
 ### 6. Technical Design
 
 Use `architect` for normal non-trivial design. Use `architect-deep` only when the task crosses the ExecPlan threshold: complex feature, significant refactor, multi-service change, schema/API contract change, migration, or unresolved high-impact tradeoff.
+
+Design (the architect's decisions) and writing are separate jobs. Once the design is locked, `04-trd.md`, `05-api-contracts.md`, and `06-data-models.md` are written by separate short-lived authors in that order, each reading the locked design plus the one prior document it depends on — never one author for all three.
 
 If `architect`/`architect-deep` surfaces a load-bearing decision that is not yet locked in `00-discussion-log.md`, stop and return to the phase-2 discussion gate before finalizing the TRD. `architect` proposes options with a recommended default; the user (or an explicitly recorded non-interactive assumption) locks the choice. Do not let a TRD silently encode an unmade architectural decision.
 
@@ -515,6 +536,8 @@ Declare each edge case in `01-prd.md` as an `EC-NN` table row and record the
 `08-quality-gates.md`; the validator fails an `EC-` id that no defined gate
 selects. A case that is written in the requirements, covered by a check, and
 selected by no gate is protected by nothing.
+
+**Write workorders from a brief, not from the package.** Before any workorder is written, the orchestrator drafts the `07-implementation-plan.md` index table as the brief: one row per workorder with its objective, the exact TRD/contract/data-model sections (file + heading) it implements, write paths, `depends_on`, gates, and DoD items. Workorders are then written by one author on a lighter configured agent (`docs`/`worker`, low or medium effort) in batches of three or four, each batch with a fresh context that reads only its index rows and the named sections — never parallel writers that each load the whole package (four did, at 560k contexts, for 154M tokens). `08-quality-gates.md` and `09-dod.md` are separate short authors too, not the plan author's tail. Once a workorder exists its frontmatter owns scope: drop the write-path column from the index, keeping objective, sections, and `depends_on`, so the two cannot drift.
 
 Build the smallest value-producing implementation wave first. Do not fully
 decompose a deep roadmap before Wave 1 can be reviewed and delivered. Later
@@ -702,7 +725,11 @@ returns; record the coverage the reviewer reports (`partial` earns exactly one
 continuation of the same pass over the unread remainder, counted as the same
 call). Close the registered IDs in one orchestrator-owned batch against the
 original criteria, the named evidence, and strict validator output; never call
-a closure reviewer. Post-cutoff discoveries are deferred unless they are
+a closure reviewer. Closure costs as much as the review when it fans out: make small edits
+yourself and give the rest to at most one fixer subagent that works the
+findings in order on a lighter configured agent (`docs`/`worker`, low or medium effort). Never run parallel fixers over shared
+documents — each re-reads the same large files, they collide on the same
+sections, and the follow-up sync agent costs more than the parallelism saved. Post-cutoff discoveries are deferred unless they are
 concrete critical-security or irreversible-data-loss evidence, which stops for
 a user decision. The complete rules — retries, later waves, exceptions — are in
 `references/delivery-contract.md` → Review Budget And Finding Cutoff.
@@ -821,6 +848,12 @@ must introduce no new decision and must cite the exact AIRD file or workorder
 for details that a delivery agent will need. A terse bullet list, a directory
 listing, or a path-only response does not satisfy this gate.
 
+It is a digest, not a second copy of the package: at most 25 KB (the reading
+budget), one to three sentences per point with a link to the exact file and
+section for detail. The ten points above are the checklist of what it must
+cover, not ten essays. Write it before the final `--strict` run while
+`status` is still `discovery`, so the budget is checked.
+
 ## Process Metrics And Loop Improvement
 
 After `accept-wave` succeeds and `DISCOVERY-SUMMARY.md` is written — before the
@@ -869,9 +902,9 @@ meets all of these conditions:
   gives the user the complete Russian-language process and architecture audit
   required by the Mandatory Discovery Summary;
 - UX framing and UI spec exist for user-facing UI, dashboards, forms, workflows, or visual changes;
-- UI prototype notes and mock-state acceptance exist for user-facing UI, dashboards, forms, workflows, or visual changes;
-- UI spec/prototype cite the current design system and application evidence,
-  include a component/token reuse map, and list accepted deviations; no
+- a short UI prototype note with the user's verdict exists for user-facing UI, dashboards, forms, workflows, or visual changes;
+- the UI spec cites the current design system and application evidence,
+  includes a component/token reuse map, and lists accepted deviations; no
   unexplained parallel visual language remains;
 - every implementation slice in the wave's dependency closure has a V4 workorder with allowed write scope;
 - every workorder in that closure passes the sizing rule and profile budget;

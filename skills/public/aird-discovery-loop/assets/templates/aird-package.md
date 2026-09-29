@@ -107,7 +107,7 @@ each one onto a gate whose selector actually picks the check that guards it.
 - Accessibility expectations:
 - Visual constraints:
 - Browser/usability verification notes:
-- Prototype/QA evidence required:
+- Prototype: one-pass sketch + user verdict (no QA at discovery):
 
 ## 02-ui-prototype.md
 
