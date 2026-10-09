@@ -252,6 +252,69 @@ export function parseGateDodMapping(gatesText) {
   return mapping;
 }
 
+// Baseline runs (P-2026-10-01-gate-baseline). A gate that protects a workorder
+// with a live-service runtime profile has one row in the `Baseline Runs` table
+// of 08-quality-gates.md: the services it needs ("none" when it needs none), the
+// delivery base it ran on with those services, and the evidence file holding the
+// result and the tests already red there. A gate that never ran on the base with
+// its services cannot tell the wave's failures from the debt it inherits, and
+// delivery pays for that with full-suite reruns at the end of the wave. Waves
+// accepted before BASELINE_RULE_SINCE keep the contract they were accepted under.
+export const BASELINE_RULE_SINCE = '2026-10-02T00:00:00.000Z';
+export const SERVICE_RUNTIME_PROFILES = new Set(['service', 'database', 'migration', 'api', 'job', 'external']);
+const EMPTY_CELL = /^(?:|-|—|–|n\/a|tbd|todo)$/i;
+
+export function parseBaselineRuns(gatesText) {
+  const body = section(gatesText, 'Baseline Runs');
+  const rows = new Map();
+  let columns = null;
+  for (const line of body.split(/\r?\n/)) {
+    if (!line.trim().startsWith('|')) continue;
+    const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+    if (!columns) {
+      columns = cells.map((cell) => cell.toLowerCase());
+      continue;
+    }
+    if (cells.every((cell) => /^:?-{2,}:?$/.test(cell))) continue;
+    const cell = (name) => {
+      const index = columns.findIndex((column) => column.startsWith(name));
+      return index >= 0 ? (cells[index] ?? '').replace(/`/g, '').trim() : '';
+    };
+    for (const gateId of collectIds(cell('gate'), /G-\d+/g)) {
+      rows.set(gateId, { services: cell('services'), base: cell('base'), evidence: cell('evidence') });
+    }
+  }
+  return rows;
+}
+
+// Gaps for the given workorders: one entry per gate they name that has no usable
+// baseline row. `owners` lists the workorders that made the gate subject to it.
+export function baselineGaps(packageDir, gatesText, workorders) {
+  const owners = new Map();
+  for (const workorder of workorders) {
+    if (!EXECUTABLE_KINDS.has(workorder.kind) || workorder.status === 'deferred') continue;
+    if (!workorder.runtimeProfiles.some((profile) => SERVICE_RUNTIME_PROFILES.has(profile))) continue;
+    for (const gateId of workorder.gateIds) owners.set(gateId, [...(owners.get(gateId) ?? []), workorder.id]);
+  }
+  const rows = parseBaselineRuns(gatesText);
+  const gaps = [];
+  for (const [gateId, ids] of owners) {
+    const row = rows.get(gateId);
+    const gap = (problem) => gaps.push({ gateId, owners: ids, message: `${gateId} (gate of ${ids.join(', ')}, live-service runtime profile) ${problem}` });
+    if (!row) {
+      gap('has no row in the `Baseline Runs` table of 08-quality-gates.md');
+      continue;
+    }
+    if (/^(?:none|нет)$/i.test(row.services)) continue;
+    if (EMPTY_CELL.test(row.services)) gap('names no services in `Baseline Runs`; write "none" when it needs none');
+    if (EMPTY_CELL.test(row.base)) gap('has no delivery base revision in `Baseline Runs`');
+    if (EMPTY_CELL.test(row.evidence) || !existsSync(join(packageDir, row.evidence))) {
+      gap(`has no baseline evidence on disk (\`${row.evidence || 'missing'}\`)`);
+    }
+  }
+  return gaps;
+}
+
 // Dependency-graph health for every executable workorder, not only an accepted
 // closure. Discovery needs this before a wave is ever accepted.
 export function inspectDependencyGraph(workorders) {
@@ -446,6 +509,14 @@ export function acceptWave(packageDir, { wave, baseRef }) {
     if (!WORK_CLASSES.has(workorder.workClass)) throw new Error(`${workorder.id} has invalid work_class: ${workorder.frontmatter.work_class || '(missing)'}`);
     if (!workorder.runtimeProfiles.length || workorder.runtimeProfiles.some((profile) => !RUNTIME_PROFILES.has(profile))) {
       throw new Error(`${workorder.id} has invalid runtime_profiles: ${workorder.runtimeProfiles.join(', ') || '(missing)'}`);
+    }
+  }
+
+  const gatesPath = join(packageDir, '08-quality-gates.md');
+  if (existsSync(gatesPath)) {
+    const gaps = baselineGaps(packageDir, readFileSync(gatesPath, 'utf8'), closure);
+    if (gaps.length) {
+      throw new Error(`wave ${wave} has gates with no baseline run on the delivery base: ${gaps.map((gap) => gap.message).join('; ')}`);
     }
   }
 

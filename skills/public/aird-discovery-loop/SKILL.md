@@ -240,7 +240,7 @@ For repository, codebase, file, or current-behavior tasks, run `explorer` first.
 - data/storage/migrations;
 - integration/external dependency;
 - existing tests/quality gates;
-- deployment/runtime behavior when relevant.
+- deployment/runtime behavior when relevant; for a stand-verified package, the stand facts and owner permission in `references/delivery-contract.md` → Readiness Contract.
 
 Each explorer output must answer: where, what connects, what matters next, and exact file paths.
 
@@ -290,7 +290,11 @@ An assumption is existential when all three hold:
 - **Cheaply falsifiable**: a real call, query, or run answers it in minutes.
 
 If it is cheap to test and expensive to be wrong about, it is existential. Test
-it now.
+it now. A feature where a model picks values from closed lists or fills
+properties always has one: probe the real prompt on a sample of real documents
+and record whether one quote is spread across many values, whether values
+absent from the text are guessed, and whether everything that enters the prompt
+also enters the cache key (eval `llm-behavior-on-real-corpus`).
 
 Enumerate with `risk-analyst` loading `rat`: ask for the assumptions that would
 kill or reshape the solution, ranked, each with the cheapest test that could
@@ -396,7 +400,7 @@ Produce:
 
 Cover the user problem, core flow, expected states, user-visible edge cases, value, adoption blockers, and measurable acceptance.
 
-The UI spec must define layout intent, information hierarchy, interaction states, responsive behavior, accessibility expectations, empty/loading/error states, and browser/usability verification notes. Use `assets/templates/ui-spec.md`.
+The UI spec must define layout intent, information hierarchy, interaction states, responsive behavior, accessibility expectations, empty/loading/error states, and browser/usability verification notes. Every link or transition names its target route and the input that route accepts, checked against the API contract. Use `assets/templates/ui-spec.md`.
 
 The UI spec must include a **Design Grounding** section with exact evidence
 paths/links and an explicit reuse map. Use this source priority:
@@ -521,6 +525,10 @@ check. When a slice's behaviour is expressed in a language another engine
 executes — Cypher, SQL, a migration, a config template — at least one required
 gate must execute those statements against the real engine, and it must fail
 rather than skip when the engine is absent (eval `double-is-not-a-boundary`).
+A mock server behind a UI gate is a double too: it reproduces the contract's
+refusals (400/403/404 on input the target rejects) instead of answering any id,
+and at least one scenario follows a link with input its target refuses (eval
+`mock-mirrors-refusals`).
 
 **Run every gate command and every workorder evidence command once, at the
 moment you write it.** Both are authored here, both look precise, and neither
@@ -529,6 +537,20 @@ ever return nothing is discovered. Paste the output into the artifact, or state
 the reason it is legitimately empty until the code exists; in that second case
 name the test or string the workorder promises to create, and confirm the
 selector would catch that name (eval `gate-selector-must-select`).
+
+**Run every gate that needs live services once on the delivery base, with those
+services, and record it.** A command run without its services proves only that
+it collects: "17 passed, 493 skipped" looks like a gate until delivery starts
+the services, and then nobody can tell the wave's failures from the debt the
+base already carries. For every gate that protects a workorder with a
+`service`, `database`, `migration`, `api`, `job`, or `external` runtime profile,
+add a row to the `Baseline Runs` table in `08-quality-gates.md`: the services
+(`none` when it needs none), the delivery base revision it ran on, the command,
+its duration, the tests already red there, and the evidence file holding that
+output. The validator warns about a missing or empty row in a draft wave and
+fails it in an accepted one; `accept-wave` refuses the wave (eval
+`gate-baseline`). Services that cannot be started where discovery runs are a
+stand question for the discussion gate, not a reason to leave the row empty.
 
 **Every edge case the PRD declares must fall under some gate's selector.**
 Declare each edge case in `01-prd.md` as an `EC-NN` table row and record the
@@ -923,6 +945,9 @@ meets all of these conditions:
   mapping, and every gate command and workorder evidence command in the
   accepted wave was executed once when written, with its output or its
   stated reason for being legitimately empty recorded;
+- every gate that protects a live-service workorder has a `Baseline Runs` row
+  naming the delivery base revision and an evidence file from a run with its
+  services;
 - documentation passes the depth standard: key docs record decisions, rationale, evidence, rejected alternatives, assumptions, and delivery implications proportional to risk;
 - every medium/high risk has a mitigation owner and evidence gate;
 - open questions are non-blocking or assigned to a workorder/spike;

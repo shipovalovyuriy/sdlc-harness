@@ -13,7 +13,7 @@ last_updated: ''
 - Active workorder:
 - Current wave (done / in progress / remaining):
 - Current gate:
-- Root slices since handoff:
+- Root slices since handoff / measured context % (SKILL Context Budget rule 7):
 - Delivery brief (inline or path — the next worker continues from this, not from re-reading the package):
 - Hard-stop reason (`none` for a routine checkpoint):
 - User decision pointer:

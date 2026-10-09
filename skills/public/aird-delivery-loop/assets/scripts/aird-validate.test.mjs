@@ -1163,6 +1163,32 @@ wave_outcomes:
     assert(![...result.parsed.errors, ...result.parsed.warnings].some((message) => message.includes('non-functional')), 'Russian non-functional targets were not recognised');
   }
 
+  // Baseline runs: a gate of a live-service workorder ran once on the delivery base.
+  {
+    const { packageDir } = makeRepository('baseline-runs', [
+      { id: 'WO-01', runtimeProfiles: ['unit', 'database'], gateIds: ['G-01', 'G-02'], dodIds: ['DOD-01'] },
+    ]);
+    writeFileSync(join(packageDir, '09-dod.md'), `${baselineContent['09-dod.md']}\nDOD-01\n`);
+    const gates = (rows) => `# Gates\n\nG-01 runs the unit tests. G-02 runs the database tests.\n\n### Gate -> DoD Mapping\n\n| Gate | Protects DoD item | Level |\n|---|---|---|\n| G-01 | DOD-01 | functional |\n| G-02 | DOD-01 | functional |\n${rows}`;
+    const table = (g02) => `\n### Baseline Runs\n\n| Gate | Services | Base revision | Command | Duration | Known red | Evidence |\n|---|---|---|---|---|---|---|\n| G-01 | none | — | — | — | — | — |\n${g02}`;
+    writeFileSync(join(packageDir, '08-quality-gates.md'), gates(''));
+    assertResult('a live-service gate with no baseline row is surfaced', run(packageDir), 0, 'G-02 (gate of WO-01, live-service runtime profile) has no row in the `Baseline Runs` table');
+    let refused = '';
+    try { acceptWave(packageDir, { wave: 'W1', baseRef: 'main' }); } catch (error) { refused = error.message; }
+    assert(refused.includes('no baseline run on the delivery base'), `accept-wave accepted a gate with no baseline run: ${refused || '(accepted)'}`);
+    writeFileSync(join(packageDir, '08-quality-gates.md'), gates(table('| G-02 | postgres | main@abc123 | `pytest -m postgres` | 4m | 0 | `evidence/baseline-G-02.txt` |\n')));
+    assertResult('baseline evidence that is not on disk is surfaced', run(packageDir), 0, 'has no baseline evidence on disk');
+    writeFileSync(join(packageDir, 'evidence', 'baseline-G-02.txt'), 'main@abc123: 41 passed, known red: none\n');
+    const recorded = run(packageDir);
+    assertResult('a recorded baseline passes', recorded, 0);
+    assert(![...recorded.parsed.errors, ...recorded.parsed.warnings].some((message) => message.includes('Baseline Runs') || message.includes('baseline')), 'a recorded baseline was still reported');
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery' });
+    assertResult('the accepted wave with its baseline passes', run(packageDir), 0);
+    rmSync(join(packageDir, 'evidence', 'baseline-G-02.txt'));
+    assertResult('an accepted wave that loses its baseline evidence fails', run(packageDir), 1, 'has no baseline evidence on disk');
+  }
+
   console.log(`aird-validate tests: PASS (${cases} cases)`);
 } finally {
   rmSync(root, { recursive: true, force: true });

@@ -141,6 +141,9 @@ const header = {
 };
 
 let body;
+// Findings born in the accepted workorder (`root_cause: workorder`) are package
+// defects by definition; the data decides this count, not --extra.
+let workorderFindings = null;
 if (kind === 'discovery') {
   const discussion = read('00-discussion-log.md');
   const risks = parseExistentialRisks(read('03-risk-register.md'));
@@ -189,6 +192,8 @@ if (kind === 'discovery') {
   const ui = parseFrontmatter(read('10-ui-verification.md'));
   const blockedNoEvidence = [backend, ui].filter((evidence) => /blocked/i.test(String(evidence.result ?? ''))).length;
   const sliceCount = countOccurrences(`${sliceIndexText}\n${archiveText}`, /^###\s+\S/gm);
+  const byRootCause = rootCauseCounts(findingEntries);
+  workorderFindings = findingEntries.length === 0 ? 0 : (byRootCause ? (byRootCause.workorder ?? 0) : null);
   body = {
     waves_delivered: [wave],
     slices_total: sliceCount || null,
@@ -203,7 +208,7 @@ if (kind === 'discovery') {
     findings: {
       total: findingEntries.length,
       by_class: classCounts(findingEntries),
-      by_root_cause: rootCauseCounts(findingEntries),
+      by_root_cause: byRootCause,
       unclassified: findingEntries.filter((entry) => !FINDING_CLASSES.has(String(entry.class ?? entry.finding_class ?? '').trim().toLowerCase())).length,
       fix_cycles: null,
       max_revision_attempts: null,
@@ -211,7 +216,7 @@ if (kind === 'discovery') {
     },
     package_rework_files: null,
     plan_deviations: null,
-    discovery_defects: { impact_radius_misses: null, proxy_probes: null, oversized_workorders: null, consumes_gaps: null, total: null },
+    discovery_defects: { impact_radius_misses: null, proxy_probes: null, oversized_workorders: null, consumes_gaps: null, workorder_findings: null, total: null },
     hard_stops: countOccurrences(`${archiveText}\n${continueText}`, /checkpoint_kind:\s*hard_stop/g),
     auto_compactions: null,
   };
@@ -225,7 +230,8 @@ function merge(target, source) {
   return target;
 }
 const record = merge({ ...header, ...body }, extra);
-if (record.discovery_defects && record.discovery_defects.total === null) {
+if (record.discovery_defects) {
+  if (Number.isInteger(workorderFindings)) record.discovery_defects.workorder_findings = workorderFindings;
   const parts = Object.entries(record.discovery_defects).filter(([key]) => key !== 'total').map(([, value]) => value);
   if (parts.every((value) => Number.isInteger(value))) record.discovery_defects.total = parts.reduce((sum, value) => sum + value, 0);
 }

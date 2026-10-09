@@ -243,6 +243,17 @@ nothing.
 | Edge case (`EC-NN` from 01-prd.md) | Gate that selects it | Selector proof |
 |---|---|---|
 
+### Baseline Runs
+
+One row per gate that protects a workorder with a live-service runtime profile
+(`service`, `database`, `migration`, `api`, `job`, `external`): the gate ran once
+on the delivery base with its services. `none` in Services marks a gate that
+needs none. The evidence file holds the output and the tests already red on the
+base; delivery compares its own results against it.
+
+| Gate | Services | Base revision | Command | Duration | Known red | Evidence |
+|---|---|---|---|---|---|---|
+
 ## 09-dod.md
 
 Opens with the per-wave outcome contract. This is what makes the product-first

@@ -82,8 +82,14 @@ require `ready_for_implementation: ready`, `verifying` requires
 `ready_for_release`/`complete` require `ready_for_release: ready`.
 
 Runtime dependency types, versions/dialects, boundaries, and intended commands
-must be known before implementation. Actual environment access and fixtures do
-not block reversible implementation. Missing runtime access blocks runtime
+must be known before implementation. When a required gate runs on a stand
+(`service`/`external` runtime profiles or a rollout gate), discovery also
+records how a release reaches the stand (auto-deploy on tag, or who triggers
+it), the config and mounted files of every process, and where env lives and
+who changes it; the owner's permission for stand steps is asked when the wave
+is accepted and recorded in `STATE.md` → Decisions, not at the end of
+delivery. Actual environment access and fixtures do not block reversible
+implementation. Missing runtime access blocks runtime
 verification, `ready_for_release`, and `status: complete`.
 
 Lifecycle statuses, and who writes each:

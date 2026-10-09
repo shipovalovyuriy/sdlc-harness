@@ -6,6 +6,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import {
+  BASELINE_RULE_SINCE,
   CONSUMES_KINDS,
   CONSUMES_PRODUCERS,
   EXECUTABLE_KINDS,
@@ -16,6 +17,7 @@ import {
   WORKORDER_STATUSES,
   WORK_CLASSES,
   asList,
+  baselineGaps,
   collectIds,
   getWaveClosure,
   inspectDependencyGraph,
@@ -683,6 +685,25 @@ for (const workorder of workorders) {
       for (const edgeCase of knownEdgeCases) {
         if (!covered.has(edgeCase)) policy(`${edgeCase} is declared in 01-prd.md but no gate selects it in the Edge Case -> Gate Mapping table`);
       }
+    }
+  }
+}
+
+// Baseline runs: every gate protecting a live-service workorder ran once on the
+// delivery base with its services (see `baselineGaps`). Waves accepted before
+// BASELINE_RULE_SINCE keep their contract; a wave accepted after it is an error
+// (accept-wave refuses it too), and a draft wave is a warning for discovery.
+{
+  const gatesText = read(join(packageDir, '08-quality-gates.md'));
+  const acceptedAt = (wave) => manifest?.waves?.[wave]?.accepted_at ?? null;
+  const subject = workorders.filter((workorder) => {
+    const at = acceptedAt(workorder.wave);
+    return !at || at >= BASELINE_RULE_SINCE;
+  });
+  if (gatesText) {
+    for (const gap of baselineGaps(packageDir, gatesText, subject)) {
+      const accepted = subject.some((workorder) => gap.owners.includes(workorder.id) && acceptedFiles.has(workorder.file));
+      (accepted ? err : warn)(gap.message);
     }
   }
 }

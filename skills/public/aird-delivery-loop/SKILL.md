@@ -32,6 +32,7 @@ The core rule that keeps token spend sane: **no long-lived all-remembering orche
   compaction to carry state.
 - **Workers exist for actual parallelism, or for context headroom.** The orchestrator implements slices itself; the two spawn justifications are defined once, in Independence Rules below. Give a justified worker the workorder file, named AIRD doc paths, and standards refs—never the parent transcript.
 - **The orchestrator never holds raw bulk.** Full logs, screenshots, and file contents live on disk; the orchestrator holds verdicts, counts, and paths.
+- **The delivery root owns only its wave.** A user request outside the accepted wave (a new feature, UI polish, research) goes to a separate Codex task so the root never accumulates its context. If the user insists on doing it here, make the planned handoff (Context Budget rule 7) first.
 
 Explicit invocation counts as permission for the delegation this skill actually needs; it is not permission to spawn an agent for every edit or finding. Its lean-routing rules have priority over the general no-delegation rule in `AGENTS.md`. Do not ask before each justified spawn.
 
@@ -128,13 +129,25 @@ These are blocking rules, not preferences. Violating them is what turns a delive
    after polling. The validator runs at pre-flight, after an accepted-contract
    or manifest change, at a checkpoint when AIRD artifacts changed, and at
    final verification—not after every source edit.
+   Exception: a slice that changes test infrastructure — shared fixtures
+   (`conftest.py` and the like), test markers or selection, the runner config
+   (`[tool.pytest]`, `jest.config`, …), session-scoped fixtures — runs once, in
+   that same slice, every gate whose selection or fixtures it touches, and
+   compares the result with that gate's `Baseline Runs` evidence. Selection
+   drift found at the end of a wave costs full-suite reruns; found in the slice
+   that caused it, it costs one run.
 7. **Checkpoint routinely; transfer before an expensive context boundary.** Checkpoint
    after every execution slice, but do not end the root task merely because a
    slice finished. After checkpointing, discard slice-local details, rebuild
    the next compact brief from disk, and continue with the next lean-routed executor when the
-   next dependency is ready. End and hand over the root task after six slices
-   since the last handoff or at about 70% context, even when delivery is smooth;
-   write `checkpoint_kind: proactive_handoff`. Also end when one of these
+   next dependency is ready. **Measure, never estimate:** at every checkpoint
+   read the context fill from Codex's context indicator (it shows context
+   left; record the used percentage) and write the percentage next to the
+   slice count in `.continue-here.md`. At 60% or more the next substantive
+   slice goes to a worker (Independence Rules); at 70% or more, or after six
+   slices since the last handoff, the handoff is mandatory even when delivery
+   is smooth: write `checkpoint_kind: proactive_handoff` and end the root task.
+   Also end when one of these
    hard-stop conditions is true: context usage reaches 100%; auto-compaction
    or summary injection occurred; or delivery state/evidence remains ambiguous
    after one narrow recovery attempt. For any truncated read, first
@@ -171,14 +184,15 @@ work, restricted closure, or verification gate):
 
 1. inspect only the slice's scoped diff and author evidence;
 2. update `STATE.md` with the eight-line slice template and update
-   `.continue-here.md` with paths and exact next action;
+   `.continue-here.md` with paths, exact next action, and the measured context
+   percentage (Context Budget rule 7);
    set `checkpoint_kind: routine` without changing delivery status unless a
    hard stop, blocker, or user decision actually pauses delivery;
 3. run the validator once when AIRD artifacts changed;
 4. emit at most one concise commentary checkpoint naming the verdict, evidence
    path, blocker, and next slice;
 5. discard slice-local detail and continue with the next dependency-compatible
-   slice when no hard-stop condition is true.
+   slice when rule 7 requires neither a worker nor a handoff.
 
 A routine slice checkpoint must not tell the user to open a new task. Prefer
 automatic continuation in the same root turn when the user asked to continue,
@@ -221,12 +235,13 @@ runnable ownership slice over mechanical one-file fragmentation.
 - Do not spawn an implementation worker for a single ready workorder or a sequence of workorders. The orchestrator executes that work directly.
 - Spawn an implementation worker on either of exactly two justifications:
   1. **Actual parallelism.** At least two large, substantive slices are dependency-ready and can run concurrently with disjoint write sets. The orchestrator may execute one concurrent slice; run at most two implementation workers at once. Stop spawning as soon as only one ready slice remains.
-  2. **Context headroom.** The orchestrator's own context is at or above 60% and a substantive slice remains — spawn even though that slice is the only one ready. Executing slices in the orchestrator is what keeps sequential work cheap, and it is also what accumulates the diffs, opened files, and test output the operating model says must not be held. Checkpointing tells you to discard slice-local detail; a fresh worker context is what actually guarantees it. The hard stops at 100% context and auto-compaction are recovery, not routing: by then the expensive part already happened.
+  2. **Context headroom.** The orchestrator's own context, as measured at the last checkpoint (Context Budget rule 7), is at or above 60% and a substantive slice remains — spawn even though that slice is the only one ready. Executing slices in the orchestrator is what keeps sequential work cheap, and it is also what accumulates the diffs, opened files, and test output the operating model says must not be held. Checkpointing tells you to discard slice-local detail; a fresh worker context is what actually guarantees it. The hard stops at 100% context and auto-compaction are recovery, not routing: by then the expensive part already happened.
 - Below 60% with one ready slice, the orchestrator implements it. Above 60%, hand it off and keep the orchestrator as a compact router. Record which of the two justifications applied in the delivery brief.
 - Do not spawn a worker for a purely mechanical closure: exact lock/count updates, snapshots, fixtures, imports, formatting, deterministic test expectation updates, AIRD evidence/checkpoints, or an adjacent path-scope correction that changes no production behavior. The orchestrator handles one coherent mechanical finding group as its own bounded slice and records the same evidence.
 - A fix is not mechanical when it changes production source behavior, architecture, auth/security/privacy, persisted data or migrations, public/runtime contracts, concurrency, or requires domain judgment. That classification increases review and verification depth; it does not by itself justify a worker. Keep the fix with the orchestrator unless it satisfies one of the two spawn justifications.
 - If an impact-radius omission is discovered only after a worker ran, do not spawn another agent merely to compensate. Record a fix workorder and repair the scoped test/fixture closure locally when deterministic; return to discovery when the missing scope changes the accepted product or architecture contract.
 - Pass only the workorder path, the named AIRD doc paths, and standards refs; never pass the parent transcript. Spawn it with `fork_turns: "none"` (`fork_turns`, not `fork_context`, is the supported spawn field).
+- Do not send follow-up work to a worker whose context is already large (about 300K+ tokens) for a fix of a few dozen lines: start a fresh narrow worker with the finding path, or fix it in the orchestrator when the fix is mechanical and the orchestrator is below 60%.
 - Keep write sets disjoint. If two workorders need the same file, sequence them or create an integration workorder.
 - A worker must not choose architecture. If the brief is insufficient, the worker STOPs and reports a blocker; the main session routes it back to `architect`/discovery.
 - Workers report changed files, tests run, contract deviations, and blockers.
