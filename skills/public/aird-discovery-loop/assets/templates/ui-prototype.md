@@ -29,6 +29,7 @@ browser and accessibility checks belong to delivery quality gates.
 
 ## Delivery Handoff
 
-- Prototype files a delivery worker must read (every source path named here
-  must appear in the accepted frontend workorders):
+- Prototype files a delivery worker must read (only this list declares
+  prototype artifacts; each file named here must appear in at least one
+  frontend/mixed workorder that reads this note):
 - UI spec sections to follow:

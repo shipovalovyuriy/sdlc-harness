@@ -698,6 +698,17 @@ existential_risks:
     );
   }
 
+  {
+    const { packageDir } = makeRepository('existential-empty-inline', [{ id: 'WO-01' }]);
+    writeFileSync(join(packageDir, '03-risk-register.md'), '---\nexistential_risks: []\n---\n\n# Risks\n');
+    const result = run(packageDir);
+    assertResult('an explicit empty existential list is accepted', result, 0);
+    assert(
+      ![...result.parsed.errors, ...result.parsed.warnings].some((message) => message.includes('declares no `existential_risks:` block')),
+      '`existential_risks: []` was still reported as undeclared',
+    );
+  }
+
   // --- Claim freeze and substituted boundaries -------------------------------
   // The expensive failure is not a missing probe. It is a claim quietly
   // narrowed to whatever the probe managed to run, with the load-bearing
@@ -1033,6 +1044,61 @@ wave_outcomes:
 `,
     );
     assertResult('UX accepted for a wave nobody decomposed is surfaced', run(packageDir), 0, 'no frontend/mixed workorder can consume it');
+  }
+
+  // --- Prototype linkage -------------------------------------------------------
+
+  {
+    const prototypeNote = `# UI Prototype
+
+## What Is Shown
+
+- Reuses the existing \`confirm-dialog.tsx\` and \`topbar.tsx\` from the app.
+
+## Delivery Handoff
+
+- Prototype files a delivery worker must read:
+  - \`prototype/index.html\` — screens and states
+- UI spec sections to follow: States
+`;
+    const screen = { id: 'WO-01', surface: 'frontend', runtimeProfiles: ['browser'], docsToRead: ['02-ui-prototype.md#Delivery Handoff'], body: 'Build the screen from prototype/index.html' };
+    const student = { id: 'WO-02', surface: 'frontend', runtimeProfiles: ['browser'], writePaths: ['src/student.txt'] };
+    const { packageDir } = makeRepository('prototype-linkage', [screen, student]);
+    for (const file of ['02-ux-problem-framing.md', '02-ui-spec.md']) writeFileSync(join(packageDir, file), `# ${file}\n`);
+    writeFileSync(join(packageDir, '02-ui-prototype.md'), prototypeNote);
+    const draft = run(packageDir);
+    assertResult('a frontend workorder without the prototype is surfaced before acceptance', draft, 0, 'WO-02.md is frontend/mixed work but docs_to_read omits 02-ui-prototype.md');
+    assert(draft.parsed.warnings.some((message) => message.includes('WO-02.md is frontend/mixed work')), 'a draft-wave prototype gap must be a warning (fatal only under --strict)');
+    assert(
+      ![...draft.parsed.errors, ...draft.parsed.warnings].some((message) => message.includes('confirm-dialog.tsx') || message.includes('topbar.tsx')),
+      'files named outside Delivery Handoff were treated as declared prototype artifacts',
+    );
+
+    writeFileSync(join(packageDir, 'workorders', 'WO-02.md'), workorderText({ ...student, extraFrontmatter: 'prototype_not_applicable: student pages keep their look; only the data source changes\n' }));
+    const exempted = run(packageDir);
+    assertResult('a reasoned prototype_not_applicable is accepted', exempted, 0);
+    assert(!exempted.parsed.warnings.some((message) => message.includes('is frontend/mixed work')), 'prototype_not_applicable did not clear the per-workorder rule');
+
+    writeFileSync(join(packageDir, 'workorders', 'WO-01.md'), workorderText({ ...screen, body: 'Build the screen' }));
+    assertResult('a declared prototype file no workorder names is surfaced', run(packageDir), 0, 'declared prototype artifact prototype/index.html');
+
+    writeFileSync(join(packageDir, 'workorders', 'WO-01.md'), workorderText(screen));
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery' });
+    const accepted = run(packageDir);
+    assertResult('covered prototype with one reader and one reasoned exemption accepts', accepted, 0);
+    assert(![...accepted.parsed.errors, ...accepted.parsed.warnings].some((message) => message.includes('is frontend/mixed work') || message.includes('declared prototype artifact')), 'an accepted, covered prototype was still reported');
+  }
+
+  {
+    const { packageDir } = makeRepository('prototype-linkage-accepted-gap', [
+      { id: 'WO-01', surface: 'frontend', runtimeProfiles: ['browser'] },
+    ]);
+    for (const file of ['02-ux-problem-framing.md', '02-ui-spec.md']) writeFileSync(join(packageDir, file), `# ${file}\n`);
+    writeFileSync(join(packageDir, '02-ui-prototype.md'), '# UI Prototype\n\n## Delivery Handoff\n\n- `prototype/index.html`\n');
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery' });
+    assertResult('an accepted frontend workorder without the prototype fails', run(packageDir), 1, 'WO-01.md is frontend/mixed work but docs_to_read omits 02-ui-prototype.md');
   }
 
   // --- Soft sizing proxies ----------------------------------------------------

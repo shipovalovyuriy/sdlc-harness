@@ -160,11 +160,19 @@ A spike answers one fixed question. `on_fail` must fail closed (block, stop,
 escalate) or return to discovery; a spike may not silently select unreviewed
 architecture or implement a fallback.
 
-One optional field exists for deliberate exceptions:
+Two optional fields exist for deliberate exceptions:
 
 ```yaml
 oversize_justification: one migration that cannot split without a half-applied schema
+prototype_not_applicable: student pages keep their look; only the data source changes
 ```
+
+`prototype_not_applicable` exempts a `frontend`/`mixed` workorder from reading
+`02-ui-prototype.md`; the value says why the prototype does not apply. Only the
+`Delivery Handoff` list of the prototype note declares prototype artifacts, and
+each file in it must be named by at least one frontend/mixed workorder that
+reads the note. Draft waves warn (fatal under `--strict`, so discovery sees the
+gap before `accept-wave`); accepted waves fail.
 
 `aird-validate.mjs` enforces these enums, the 1–3 atomic-task sizing rule,
 non-empty bounded `allowed_write_paths`, non-empty `docs_to_read`, the
@@ -254,6 +262,9 @@ existential_risks:
     probe: evidence/r-01-token-count.log
 ---
 ```
+
+When no assumption qualifies, write `existential_risks: []` — an explicit,
+auditable "none". A missing key is an unanswered question and is reported.
 
 `aird-validate.mjs` enforces:
 

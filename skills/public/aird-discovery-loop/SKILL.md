@@ -445,9 +445,12 @@ understanding, not a quality gate: no review rounds, no QA, no state matrix.
   audit at this stage.** Browser, responsive, and accessibility checks belong
   to delivery quality gates on the real implementation.
 - `02-ui-prototype.md` stays short: host and run command, what is shown, the
-  user's verdict, and any deliberate deviation from the existing UI. List only
-  the prototype files a delivery worker must read — the validator requires
-  every source path named there to appear in accepted frontend workorders.
+  user's verdict, and any deliberate deviation from the existing UI. List the
+  prototype files a delivery worker must read under `Delivery Handoff`: only
+  that list declares prototype artifacts, and each file in it must be named
+  by at least one frontend/mixed workorder. Every frontend/mixed workorder
+  reads `02-ui-prototype.md` or records `prototype_not_applicable` with the
+  reason; the strict discovery run checks both before `accept-wave`.
 
 If the session is non-interactive or the user does not look at the prototype,
 record the direction as `unconfirmed` in `STATE.md`/`02-ui-prototype.md` (not
@@ -776,6 +779,17 @@ The validator also prints `waveDigest`, containing each accepted wave's
 surface, dependencies, write scope, impact radius, and runtime profiles. Treat
 that digest as the delivery pre-flight index; do not add a second hand-built
 frontmatter summary to `STATE.md`.
+
+Before the review plan, close requirement ownership yourself. The final
+review most often spends its budget on two classes: "required by the TRD,
+owned by no workorder" and "DoD item of the target wave with no owner" (eval
+`requirement-ownership-before-review`). Run one bounded search per class: take
+every observability signal, metric, limit, quota, and non-functional target the
+TRD states as required, plus every DoD item of the target wave, and `rg` its
+name against `workorders/` (output to `evidence/`, a count on screen). Each one
+lands in a workorder of the target wave or in an explicit deferral paragraph of
+`07-implementation-plan.md` that names the later wave. Fix the gaps before the
+review; integrity item 4 stays in the review, which should find nothing to add.
 
 Before starting the single final combined reviewer, post a **structured review
 plan** directly in chat using `assets/templates/final-review-plan.md`. This is

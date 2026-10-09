@@ -141,6 +141,8 @@ existential_risks:
 ---
 ```
 
+No qualifying assumption: write `existential_risks: []` (an explicit "none").
+
 The claim is fixed before the probe runs; afterwards it may change only to
 `refuted`. Narrowing it to describe the part that happened to work is not
 proving it — record that as `unproven` with the proven part in `claim`. A

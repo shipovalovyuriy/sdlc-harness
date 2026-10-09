@@ -517,7 +517,9 @@ const existentialRisks = parseExistentialRisks(riskRegisterText);
 
   // Silence is not the same as "no existential risk". Force the question to be
   // answered once design has started; an empty list is a valid answer.
-  if (v4Mode && executable.length && !/^existential_risks:\s*$/m.test(riskRegisterText)) {
+  // `existential_risks: []` is the explicit "none"; a bare key with a block
+  // list (or nothing) below it is the other accepted form.
+  if (v4Mode && executable.length && !/^existential_risks:\s*(?:\[\s*\])?\s*(?:#.*)?$/m.test(riskRegisterText)) {
     warn('03-risk-register.md declares no `existential_risks:` block; state it explicitly before designing (an empty list is a valid answer)');
   }
 
@@ -708,20 +710,34 @@ for (const workorder of workorders) {
   }
 }
 
-// Prototype linkage is checked only for accepted frontend work. Later draft UI
-// work never blocks an already accepted backend wave.
+// Prototype linkage. Only the Delivery Handoff list declares prototype
+// artifacts -- the rest of the note may name reused app components, which are
+// not files a worker must open. Every frontend/mixed workorder either reads
+// 02-ui-prototype.md or records why the prototype does not apply to it, and
+// every declared file reaches at least one workorder that reads it. Draft waves
+// warn (fatal under --strict, so discovery sees it before accept-wave);
+// accepted waves fail.
 if (filesOnDisk.has('02-ui-prototype.md')) {
   const prototypeText = read(join(packageDir, '02-ui-prototype.md'));
-  const declaredPaths = [...prototypeText.matchAll(/`([^`]+\.(?:html?|tsx?|jsx?|vue|svelte))`/gi)]
+  const handoff = section(prototypeText, 'Delivery Handoff');
+  const declaredPaths = [...(handoff.trim() ? handoff : prototypeText).matchAll(/`([^`]+\.(?:html?|tsx?|jsx?|vue|svelte))`/gi)]
     .map((match) => match[1])
     .filter((path, index, all) => all.indexOf(path) === index);
-  for (const workorder of workorders.filter((item) => acceptedFiles.has(item.file) && ['frontend', 'mixed'].includes(item.surface))) {
+  const uiWorkorders = workorders.filter((item) =>
+    EXECUTABLE_KINDS.has(item.kind) && item.status !== 'deferred' && ['frontend', 'mixed'].includes(item.surface));
+  const notApplicable = (item) => String(item.frontmatter.prototype_not_applicable ?? '').trim();
+  for (const workorder of uiWorkorders) {
+    if (notApplicable(workorder)) continue;
     const docsToRead = asList(workorder.frontmatter.docs_to_read);
     if (!docsToRead.some((entry) => entry.includes('02-ui-prototype.md'))) {
-      err(`${workorder.file} is accepted frontend work but docs_to_read omits 02-ui-prototype.md`);
+      (acceptedFiles.has(workorder.file) ? err : warn)(`${workorder.file} is frontend/mixed work but docs_to_read omits 02-ui-prototype.md; add it or record \`prototype_not_applicable\` with the reason`);
     }
-    for (const declaredPath of declaredPaths) {
-      if (!workorder.text.includes(declaredPath)) err(`${workorder.file} omits declared prototype artifact ${declaredPath}`);
+  }
+  const readers = uiWorkorders.filter((item) => !notApplicable(item));
+  const acceptedReaders = readers.filter((item) => acceptedFiles.has(item.file));
+  for (const declaredPath of readers.length ? declaredPaths : []) {
+    if (!readers.some((item) => item.text.includes(declaredPath))) {
+      (acceptedReaders.length ? err : warn)(`declared prototype artifact ${declaredPath} (02-ui-prototype.md, Delivery Handoff) is named by no frontend/mixed workorder`);
     }
   }
 }
