@@ -22,6 +22,9 @@ docs_to_read: []
 # Only when a soft sizing limit is deliberately exceeded (>6 non-test write
 # paths, >3 dod_ids, >10 negative cases): say why the slice cannot be cut.
 # oversize_justification: ''
+# Only for frontend/mixed work that touches no prototype screen: say why,
+# instead of listing 02-ui-prototype.md in docs_to_read.
+# prototype_not_applicable: ''
 ---
 
 # Workorder Template

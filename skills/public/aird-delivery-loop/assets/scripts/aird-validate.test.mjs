@@ -698,6 +698,17 @@ existential_risks:
     );
   }
 
+  {
+    const { packageDir } = makeRepository('existential-empty-inline', [{ id: 'WO-01' }]);
+    writeFileSync(join(packageDir, '03-risk-register.md'), '---\nexistential_risks: []\n---\n\n# Risks\n');
+    const result = run(packageDir);
+    assertResult('an explicit empty existential list is accepted', result, 0);
+    assert(
+      ![...result.parsed.errors, ...result.parsed.warnings].some((message) => message.includes('declares no `existential_risks:` block')),
+      '`existential_risks: []` was still reported as undeclared',
+    );
+  }
+
   // --- Claim freeze and substituted boundaries -------------------------------
   // The expensive failure is not a missing probe. It is a claim quietly
   // narrowed to whatever the probe managed to run, with the load-bearing
@@ -1035,6 +1046,61 @@ wave_outcomes:
     assertResult('UX accepted for a wave nobody decomposed is surfaced', run(packageDir), 0, 'no frontend/mixed workorder can consume it');
   }
 
+  // --- Prototype linkage -------------------------------------------------------
+
+  {
+    const prototypeNote = `# UI Prototype
+
+## What Is Shown
+
+- Reuses the existing \`confirm-dialog.tsx\` and \`topbar.tsx\` from the app.
+
+## Delivery Handoff
+
+- Prototype files a delivery worker must read:
+  - \`prototype/index.html\` — screens and states
+- UI spec sections to follow: States
+`;
+    const screen = { id: 'WO-01', surface: 'frontend', runtimeProfiles: ['browser'], docsToRead: ['02-ui-prototype.md#Delivery Handoff'], body: 'Build the screen from prototype/index.html' };
+    const student = { id: 'WO-02', surface: 'frontend', runtimeProfiles: ['browser'], writePaths: ['src/student.txt'] };
+    const { packageDir } = makeRepository('prototype-linkage', [screen, student]);
+    for (const file of ['02-ux-problem-framing.md', '02-ui-spec.md']) writeFileSync(join(packageDir, file), `# ${file}\n`);
+    writeFileSync(join(packageDir, '02-ui-prototype.md'), prototypeNote);
+    const draft = run(packageDir);
+    assertResult('a frontend workorder without the prototype is surfaced before acceptance', draft, 0, 'WO-02.md is frontend/mixed work but docs_to_read omits 02-ui-prototype.md');
+    assert(draft.parsed.warnings.some((message) => message.includes('WO-02.md is frontend/mixed work')), 'a draft-wave prototype gap must be a warning (fatal only under --strict)');
+    assert(
+      ![...draft.parsed.errors, ...draft.parsed.warnings].some((message) => message.includes('confirm-dialog.tsx') || message.includes('topbar.tsx')),
+      'files named outside Delivery Handoff were treated as declared prototype artifacts',
+    );
+
+    writeFileSync(join(packageDir, 'workorders', 'WO-02.md'), workorderText({ ...student, extraFrontmatter: 'prototype_not_applicable: student pages keep their look; only the data source changes\n' }));
+    const exempted = run(packageDir);
+    assertResult('a reasoned prototype_not_applicable is accepted', exempted, 0);
+    assert(!exempted.parsed.warnings.some((message) => message.includes('is frontend/mixed work')), 'prototype_not_applicable did not clear the per-workorder rule');
+
+    writeFileSync(join(packageDir, 'workorders', 'WO-01.md'), workorderText({ ...screen, body: 'Build the screen' }));
+    assertResult('a declared prototype file no workorder names is surfaced', run(packageDir), 0, 'declared prototype artifact prototype/index.html');
+
+    writeFileSync(join(packageDir, 'workorders', 'WO-01.md'), workorderText(screen));
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery' });
+    const accepted = run(packageDir);
+    assertResult('covered prototype with one reader and one reasoned exemption accepts', accepted, 0);
+    assert(![...accepted.parsed.errors, ...accepted.parsed.warnings].some((message) => message.includes('is frontend/mixed work') || message.includes('declared prototype artifact')), 'an accepted, covered prototype was still reported');
+  }
+
+  {
+    const { packageDir } = makeRepository('prototype-linkage-accepted-gap', [
+      { id: 'WO-01', surface: 'frontend', runtimeProfiles: ['browser'] },
+    ]);
+    for (const file of ['02-ux-problem-framing.md', '02-ui-spec.md']) writeFileSync(join(packageDir, file), `# ${file}\n`);
+    writeFileSync(join(packageDir, '02-ui-prototype.md'), '# UI Prototype\n\n## Delivery Handoff\n\n- `prototype/index.html`\n');
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery' });
+    assertResult('an accepted frontend workorder without the prototype fails', run(packageDir), 1, 'WO-01.md is frontend/mixed work but docs_to_read omits 02-ui-prototype.md');
+  }
+
   // --- Soft sizing proxies ----------------------------------------------------
 
   {
@@ -1161,6 +1227,32 @@ wave_outcomes:
     writeFileSync(join(packageDir, '04-trd.md'), '# ТР\n\nБюджет задержки: 200 мс на запрос при ожидаемом масштабе 50 запросов в секунду.\n');
     const result = run(packageDir);
     assert(![...result.parsed.errors, ...result.parsed.warnings].some((message) => message.includes('non-functional')), 'Russian non-functional targets were not recognised');
+  }
+
+  // Baseline runs: a gate of a live-service workorder ran once on the delivery base.
+  {
+    const { packageDir } = makeRepository('baseline-runs', [
+      { id: 'WO-01', runtimeProfiles: ['unit', 'database'], gateIds: ['G-01', 'G-02'], dodIds: ['DOD-01'] },
+    ]);
+    writeFileSync(join(packageDir, '09-dod.md'), `${baselineContent['09-dod.md']}\nDOD-01\n`);
+    const gates = (rows) => `# Gates\n\nG-01 runs the unit tests. G-02 runs the database tests.\n\n### Gate -> DoD Mapping\n\n| Gate | Protects DoD item | Level |\n|---|---|---|\n| G-01 | DOD-01 | functional |\n| G-02 | DOD-01 | functional |\n${rows}`;
+    const table = (g02) => `\n### Baseline Runs\n\n| Gate | Services | Base revision | Command | Duration | Known red | Evidence |\n|---|---|---|---|---|---|---|\n| G-01 | none | — | — | — | — | — |\n${g02}`;
+    writeFileSync(join(packageDir, '08-quality-gates.md'), gates(''));
+    assertResult('a live-service gate with no baseline row is surfaced', run(packageDir), 0, 'G-02 (gate of WO-01, live-service runtime profile) has no row in the `Baseline Runs` table');
+    let refused = '';
+    try { acceptWave(packageDir, { wave: 'W1', baseRef: 'main' }); } catch (error) { refused = error.message; }
+    assert(refused.includes('no baseline run on the delivery base'), `accept-wave accepted a gate with no baseline run: ${refused || '(accepted)'}`);
+    writeFileSync(join(packageDir, '08-quality-gates.md'), gates(table('| G-02 | postgres | main@abc123 | `pytest -m postgres` | 4m | 0 | `evidence/baseline-G-02.txt` |\n')));
+    assertResult('baseline evidence that is not on disk is surfaced', run(packageDir), 0, 'has no baseline evidence on disk');
+    writeFileSync(join(packageDir, 'evidence', 'baseline-G-02.txt'), 'main@abc123: 41 passed, known red: none\n');
+    const recorded = run(packageDir);
+    assertResult('a recorded baseline passes', recorded, 0);
+    assert(![...recorded.parsed.errors, ...recorded.parsed.warnings].some((message) => message.includes('Baseline Runs') || message.includes('baseline')), 'a recorded baseline was still reported');
+    acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+    setState(packageDir, { status: 'ready_for_delivery' });
+    assertResult('the accepted wave with its baseline passes', run(packageDir), 0);
+    rmSync(join(packageDir, 'evidence', 'baseline-G-02.txt'));
+    assertResult('an accepted wave that loses its baseline evidence fails', run(packageDir), 1, 'has no baseline evidence on disk');
   }
 
   console.log(`aird-validate tests: PASS (${cases} cases)`);

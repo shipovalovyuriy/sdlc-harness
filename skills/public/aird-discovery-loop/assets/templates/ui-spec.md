@@ -58,6 +58,9 @@ evidence here. Do not leave this section blank and silently design from scratch.
 
 1. 
 
+| Link or transition | Target route | Accepted input (checked against the API contract) |
+|---|---|---|
+
 ## States
 
 - Loading:

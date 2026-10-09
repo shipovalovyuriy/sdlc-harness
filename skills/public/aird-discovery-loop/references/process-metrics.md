@@ -64,8 +64,8 @@ slice index, `evidence/state-archive.md`, `.continue-here.md`, workorders,
 notes), writes the snapshot, appends the history line, and prints the
 comparison, the fired signals, and the list of fields still `null`. The
 orchestrator supplies through `--extra` only what the package cannot prove
-(worker counts and reasons, first-pass gates, fix cycles, discovery defects,
-rework files, compactions) and leaves the rest `null`. Handwritten records
+(worker counts and reasons, first-pass gates, fix cycles, discovery-defect
+classes the finding files cannot show, rework files, compactions) and leaves the rest `null`. Handwritten records
 are what produced nine records in three incompatible key sets before this
 script existed; migrated copies of those live in `history.jsonl` with a
 `notes` line saying so, and the originals in `history.pre-schema1.jsonl`.
@@ -182,7 +182,8 @@ Correction procedure) triggered during this discovery.
     "proxy_probes": 0,
     "oversized_workorders": 0,
     "consumes_gaps": 0,
-    "total": 0
+    "workorder_findings": 1,
+    "total": 1
   },
   "hard_stops": 0,
   "auto_compactions": 0
@@ -210,10 +211,13 @@ Definitions:
 - `discovery_defects` — defects delivery found in the *package*, not the code:
   impact-radius locks the search missed, existential probes that turned out to
   be proxies, workorders failing the sizing gate at pre-flight, unresolved
-  `## Consumes` inputs. `total` is the sum (the script fills it) and the only
-  value migrated pre-schema records carry; additional named classes may be
-  added as extra keys. Every nonzero value here is a discovery-skill signal,
-  not a delivery-skill signal.
+  `## Consumes` inputs. `workorder_findings` is derived by the script from the
+  finding files with `root_cause: workorder` (the source of
+  `findings.by_root_cause`) and overrides `--extra`; it may overlap the named
+  classes. `total` is the sum, recomputed by the script whenever every part is
+  known, and the only value migrated pre-schema records carry; additional named
+  classes may be added as extra keys. Every nonzero value here is a
+  discovery-skill signal, not a delivery-skill signal.
 - Sources: the delivery brief, `STATE.md` slice index plus
   `evidence/state-archive.md`, `10-*-verification.md` frontmatter,
   finding-notes/fix-workorders, `.continue-here.md` counters.
