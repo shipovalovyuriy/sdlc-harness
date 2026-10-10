@@ -171,6 +171,10 @@ Every medium/high risk must name the decision, mitigation owner or workorder, an
 - Non-functional targets (scale, latency/performance budget, cost) — required
   for a `deep` package; write the numbers, do not reference them:
 - Compatibility:
+- Implicit properties of existing entities — required when `06-data-models.md`
+  exists: heading `## Implicit Properties Of Existing Entities`, a table
+  (property of existing rows | who relies on it, including the previous build on
+  rollback | what the new path produces | decision) or `None.` with the reason:
 - Alternatives rejected:
 - Assumptions and open technical questions:
 

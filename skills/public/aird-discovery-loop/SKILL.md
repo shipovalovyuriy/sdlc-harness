@@ -510,6 +510,36 @@ states no non-functional targets anywhere in the PRD or TRD. A later risk that
 cites "the PRD latency budget" when no budget was ever written is a gap that
 surfaces at release, when the measurement is expensive and the design is fixed.
 
+**A new path to an existing entity names what the old rows silently
+guaranteed.** When the package adds a second way to create rows of an entity
+that already exists — a builder next to file imports, an API next to a seed, an
+import next to a form — old consumers keep relying on properties every existing
+row happened to have: a key equal to the slug, a column that was always filled,
+child parts that were always present, a catalog placement. The new path
+inherits none of them unless someone writes them down, and its defects then
+pass every author test built on fixtures of the old form. `04-trd.md` therefore
+carries an `## Implicit Properties Of Existing Entities` section (a contract
+heading the validator reads) with one row per property:
+
+```markdown
+## Implicit Properties Of Existing Entities
+
+| Property of existing rows | Who relies on it | What the new path produces | Decision |
+|---|---|---|---|
+| `content` is never NULL | previous build on rollback reads it as required | NULL | expand migration sets DEFAULT `{}` |
+| every lesson has a quiz and homework | the "lesson done" rule | lecture-only lesson | rule counts only the parts the lesson has |
+| module `id` equals its `slug` | progress keyed by slug | `id = m_…` | readers translate slug to id |
+```
+
+"Who relies on it" covers the previous build during rollback, old clients,
+rules and aggregates — not only code the package will edit. Every decision row
+lands in a workorder; every workorder that reads such an entity puts a
+new-form fixture in its acceptance tests and the touched tests in
+`impact_radius` — a fixture of the old form alone proves nothing about the new
+path. A package that adds no new creation path writes `None.` with the reason.
+The validator warns — fatal under the `--strict` run discovery must use — when
+`06-data-models.md` exists and the TRD lacks this section or leaves it empty.
+
 ### 7. Implementation Plan And Quality Gates
 
 Produce:

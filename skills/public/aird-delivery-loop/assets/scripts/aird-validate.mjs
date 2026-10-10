@@ -10,6 +10,7 @@ import {
   CONSUMES_KINDS,
   CONSUMES_PRODUCERS,
   EXECUTABLE_KINDS,
+  IMPLICIT_PROPERTIES_RULE_SINCE,
   NON_IMPLEMENTATION_KINDS,
   RUNTIME_PROFILES,
   SURFACES,
@@ -951,6 +952,23 @@ if (state.discovery_profile === 'deep') {
   if (!covered) {
     const message = 'deep profile states no non-functional targets (scale, latency/performance budget, cost) in 01-prd.md or 04-trd.md; state them or record explicitly why they do not apply';
     if (GATED.has(status)) err(message); else warn(message);
+  }
+}
+
+// A second way to create rows of an existing entity inherits none of the
+// properties old consumers silently rely on (key equalities, always-filled
+// columns, always-present parts); the TRD names them or says there are none.
+// Warning, fatal under the --strict run discovery uses; packages with a wave
+// accepted before IMPLICIT_PROPERTIES_RULE_SINCE keep their contract.
+if (filesOnDisk.has('06-data-models.md')) {
+  const acceptedEarlier = Object.values(manifest?.waves ?? {})
+    .some((wave) => wave?.accepted_at && wave.accepted_at < IMPLICIT_PROPERTIES_RULE_SINCE);
+  const body = section(read(join(packageDir, '04-trd.md')), 'Implicit Properties Of Existing Entities');
+  const answered = body.includes('|')
+    ? parsePipeTable(body).some((cells) => cells.some((cell) => cell !== ''))
+    : /(^|[^\p{L}])(none|нет)([^\p{L}]|$)/iu.test(body);
+  if (!acceptedEarlier && !answered) {
+    warn('04-trd.md has no `## Implicit Properties Of Existing Entities` answer while 06-data-models.md exists; list the properties existing rows silently guarantee, who relies on them (including the previous build on rollback) and what a new creation path produces, or write `None.` with the reason');
   }
 }
 

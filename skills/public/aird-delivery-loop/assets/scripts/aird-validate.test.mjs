@@ -1028,6 +1028,37 @@ wave_outcomes:
     );
   }
 
+  // --- Implicit properties of existing entities ------------------------------
+
+  {
+    const message = 'Implicit Properties Of Existing Entities';
+    const has = (result) => [...result.parsed.errors, ...result.parsed.warnings].some((text) => text.includes(message));
+    const { packageDir } = makeRepository('implicit-properties', [{ id: 'WO-01' }]);
+    assert(!has(run(packageDir)), 'a package without 06-data-models.md must not be asked for implicit properties');
+
+    writeFileSync(join(packageDir, '06-data-models.md'), '# Data models\n\n- Entities: lesson\n');
+    assertResult('a data-model package with no implicit-properties answer is surfaced', run(packageDir), 0, message);
+    assertResult('and it is fatal under --strict', run(packageDir, ['--strict']), 1, message);
+
+    writeFileSync(join(packageDir, '04-trd.md'), '# TRD\n\n## Implicit Properties Of Existing Entities\n\n## Rollout\n');
+    assert(has(run(packageDir)), 'an empty section is not an answer');
+
+    writeFileSync(join(packageDir, '04-trd.md'), '# TRD\n\n## Implicit Properties Of Existing Entities\n\nНет. Новых путей создания существующих сущностей нет.\n');
+    assert(!has(run(packageDir)), 'an explicit Russian none is an answer');
+
+    writeFileSync(join(packageDir, '04-trd.md'), [
+      '# TRD', '', '## Implicit Properties Of Existing Entities', '',
+      '| Property of existing rows | Who relies on it | What the new path produces | Decision |',
+      '|---|---|---|---|',
+      '| `content` is never NULL | previous build on rollback | NULL | DEFAULT `{}` |', '',
+    ].join('\n'));
+    assert(!has(run(packageDir)), 'a property table is an answer');
+
+    writeFileSync(join(packageDir, '04-trd.md'), '# TRD\n');
+    writeFileSync(join(packageDir, 'REVIEW-MANIFEST.json'), JSON.stringify({ waves: { W1: { accepted_at: '2026-10-09T08:00:00.000Z' } } }));
+    assert(!has(run(packageDir)), 'a package with a wave accepted before the rule keeps its contract');
+  }
+
   // --- UX accepted for an undecomposed wave -----------------------------------
 
   {

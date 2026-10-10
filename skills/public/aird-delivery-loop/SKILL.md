@@ -194,6 +194,21 @@ work, restricted closure, or verification gate):
 5. discard slice-local detail and continue with the next dependency-compatible
    slice when rule 7 requires neither a worker nor a handoff.
 
+**A residual that breaks an accepted rule is a blocker now, not a release
+note.** At step 2, check every open residual of the slice against the accepted
+package. When it contradicts an accepted rule — a TRD requirement (rollback,
+compatibility, security), a DoD line, or a risk-register mitigation — record it
+in the same slice as a `STATE.md` frontmatter blocker (`needs_user_decision:
+true` unless the accepted package already decides the fix) naming what it
+blocks, and ask the user at this checkpoint with the options and a recommended
+default. Independent slices continue meanwhile; no slice whose write scope the
+answer could change starts before it. Only a residual whose check the accepted
+gates themselves defer to release — a stand credential, a production copy, an
+observation window mapped in `08-quality-gates.md` — may stay a release note.
+The failure this prevents: a rollback defect found in the first slice, parked
+"for release", returns as an escalation after the wave closed, and a one-line
+decision in two later workorders becomes a separate fix cycle.
+
 A routine slice checkpoint must not tell the user to open a new task. Prefer
 automatic continuation in the same root turn when the user asked to continue,
 finish, or run the delivery loop. A later **fresh Codex task/session** starts a
