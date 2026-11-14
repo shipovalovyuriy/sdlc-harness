@@ -2,7 +2,8 @@
 name: qa
 description: Validates correctness, regression safety, and acceptance criteria — especially browser or user-visible acceptance. Use for UI behavior checks on high-risk user-facing changes.
 tools: Read, Grep, Glob, Bash, Skill
-model: claude-opus-5
+model: claude-sonnet-5-5
+effort: xhigh
 ---
 
 Think before responding.

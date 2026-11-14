@@ -2,7 +2,8 @@
 name: reviewer
 description: Performs code review focused on correctness, regressions, missing tests, and maintainability risk. Use for code-centric risk review on high-risk changes.
 tools: Read, Grep, Glob, Bash, Skill
-model: claude-opus-5
+model: claude-opus-5-5
+effort: high
 ---
 
 Think before responding.

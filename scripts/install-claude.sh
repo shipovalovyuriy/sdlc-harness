@@ -55,7 +55,7 @@ rewrite() {
   # "Codex Security" is a product name, "Codex app" names a Codex-only surface.
   # KEEP_CODEX_WORD=1 keeps the bare word where Codex is the subject matter
   # (a target runtime the skill writes for), not the host runtime.
-  perl -pi -e '
+  perl -0777 -pi -e '
     s{Claude and Codex}{__BOTH_RUNTIMES__}g;
     s{Codex Security}{__CODEX_SECURITY__}g;
     s{Codex app}{__CODEX_APP__}g;
@@ -69,6 +69,9 @@ rewrite() {
     s{\.codex/skills/public}{.claude/skills}g;
     s{codex exec}{claude -p}g;
     s{\bAGENTS\.md\b}{CLAUDE.md}g;
+    s{a separate Codex task}{a separate task — Claude Code: a `spawn_task` chip or a new session —}g;
+    s{read the context fill from Codex.s context indicator \(it shows context\s+left; record the used percentage\)}{read the context fill (Claude Code: `mcp__ccd_session_mgmt__get_usage` when\n   available, else the composer\x27s context indicator)}g;
+    s{Do not send follow-up work to a worker whose context}{Do not continue (`SendMessage`) a worker whose context}g;
     s{Spawn it with `fork_turns: "none"` \(`fork_turns`, not `fork_context`, is the supported spawn field\)\.}{Claude Code subagents always start with a clean context; there is no fork field to set.}g;
     s{Use `fork_turns: "none"` for workers\. Pass}{Pass}g;
     s{`fork_turns`, not `fork_context`, is the supported spawn field\.}{Claude Code subagents always start with a clean context; there is no fork field to set.}g;
@@ -91,6 +94,9 @@ rewrite() {
 CODEX_AS_SUBJECT=" prompt-generator "
 
 for name in "${ALL_NAMES[@]}"; do
+  # skill-doctor documents and collects multiple runtimes; those names and
+  # source paths describe the data being graded, not the executing runtime.
+  [[ "$name" == "skill-doctor" ]] && continue
   keep_codex=""
   [[ "$CODEX_AS_SUBJECT" == *" $name "* ]] && keep_codex=1
   while IFS= read -r -d '' file; do

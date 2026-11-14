@@ -16,6 +16,19 @@ Everything is packaged as skills, subagent role definitions, and install
 scripts. The repository is meant to be read by both humans and the agents
 themselves: files are explicit, auditable, and versioned.
 
+## November 2026 snapshot
+
+- Discovery checks file-writing tools before assigning a document author;
+  read-only specialists provide analysis and `docs` writes the artifact.
+- Release readiness and completion require runtime/UI evidence, completed
+  accepted work, and consistent per-check verdicts and execution counts.
+- The final validator JSON must have `ok: true` and the claimed release status;
+  a user waiver remains distinct from a passed check.
+- New or changed long-running verification scripts get cheap runner checks
+  before the full runtime gate.
+- Portable regression scenarios live in `evals/`; local session histories and
+  process metrics are not part of the bundle.
+
 ## Why a harness
 
 Code generation is no longer the bottleneck; judgment, verification, and
@@ -155,9 +168,14 @@ Harness skills (`skills/public/`):
 | `prompt-generator` | Prompt engineering for any target |
 
 Vendored third-party skills at `skills/` top level:
-`figma-implement-design`, `pdf`, `playwright`, `security-best-practices`,
-`spreadsheet`. The former vendored `figma` skill was dropped: the name is
+`figma-implement-design`, `humanizer`, `pdf`, `playwright`,
+`security-best-practices`, `skill-doctor`, `spreadsheet`. The former vendored `figma` skill was dropped: the name is
 taken by the HyperFrames `figma` skill, and an install would overwrite it.
+
+`skill-doctor` comes from [warpdotdev/common-skills](https://github.com/warpdotdev/common-skills/tree/main/.agents/skills/skill-doctor)
+under its included MIT license. Local collector fixes support current Codex
+message records and `skills/public`. It is installed unchanged for both
+runtimes because it evaluates multiple harnesses, including Codex and Claude.
 
 ## Repository layout
 
@@ -176,6 +194,7 @@ taken by the HyperFrames `figma` skill, and an install would overwrite it.
 │   ├── INCLUDED.md              # what is included and the typical flow
 │   ├── CONFIG.md
 │   └── SECURITY.md
+├── evals/                       # portable AIRD regression scenarios
 ├── scripts/
 │   ├── install.sh               # install both runtimes (or --codex / --claude)
 │   ├── install-codex.sh
@@ -202,6 +221,8 @@ discovers top-level skills) and rewrites the runtime dialect: `$skill` →
 `${CLAUDE_CONFIG_DIR}` paths, `agent_type` → `subagent_type`, fork-field
 semantics. Skill texts are maintained once, in the Codex dialect.
 
+The multi-runtime `skill-doctor` documentation is exempt from dialect rewrites.
+
 Then start a session and run:
 
 ```text
@@ -220,3 +241,16 @@ $aird-delivery-loop    # Codex
 
 The bundle is portable by design: no auth files, API keys, provider
 credentials, logs, or project secrets. See [docs/SECURITY.md](docs/SECURITY.md).
+
+## Verify the snapshot
+
+```bash
+node --test skills/public/aird-delivery-loop/assets/scripts/aird-validate.test.mjs
+python3 -m unittest discover -s skills/skill-doctor/scripts -p 'test_*.py'
+bash -n scripts/install.sh scripts/install-codex.sh scripts/install-claude.sh
+```
+
+The installed Claude copy runs the same validator regression suite after
+dialect conversion. The Markdown cases in `evals/` describe the expected
+orchestrator behavior and its verification limits; they are separate from the
+executable CLI tests.

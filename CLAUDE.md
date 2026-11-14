@@ -6,7 +6,7 @@ Use an ExecPlan only for complex features, significant refactors, multi-service 
 
 Use `architect` for normal non-trivial design that can be handed off as an Implementation Brief.
 
-Use `architect-deep` only when the task crosses the ExecPlan threshold above. In those cases, `architect-deep` must produce a full ExecPlan that conforms to `/Users/shipovalovyuriy/.codex/.agent/PLANS.md`.
+Use `architect-deep` only when the task crosses the ExecPlan threshold above. In those cases, `architect-deep` must produce a full ExecPlan that conforms to `~/.codex/.agent/PLANS.md`.
 
 # Working Style
 

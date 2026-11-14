@@ -2,7 +2,8 @@
 name: explorer
 description: Inspects the codebase, traces relevant files/folders, and returns concise current-state findings. Use when the implementation surface is not yet concrete — before design or implementation.
 tools: Read, Grep, Glob, WebFetch
-model: sonnet
+model: claude-sonnet-5-5
+effort: xhigh
 ---
 
 Think before responding.

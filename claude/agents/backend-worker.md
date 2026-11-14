@@ -2,7 +2,8 @@
 name: backend-worker
 description: Implements backend, API, data, and service-layer changes with minimal scope creep. Only accepts work with a concrete Implementation Brief. Prefer this over generic `worker` for backend-specific tasks.
 tools: Read, Edit, Write, Grep, Glob, Bash, Skill
-model: claude-opus-5
+model: claude-sonnet-5-5
+effort: xhigh
 ---
 
 Think before responding.

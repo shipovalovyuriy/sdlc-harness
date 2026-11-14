@@ -2,7 +2,8 @@
 name: product-analyst
 description: Supports AIRD discovery by clarifying user value, workflows, product risks, scope, edge cases, and acceptance criteria. Use to turn feature intent into a crisp PRD, user problem framing, acceptance criteria, and Definition of Done.
 tools: Read, Grep, Glob, WebFetch, Skill
-model: claude-opus-5
+model: claude-sonnet-5-5
+effort: xhigh
 ---
 
 Think before responding.

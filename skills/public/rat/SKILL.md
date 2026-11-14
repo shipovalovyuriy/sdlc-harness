@@ -5,252 +5,88 @@ description: "Use for Riskiest Assumption Test work: identify, rank, pressure-te
 
 # RAT
 
-## Purpose
+## Purpose And Fit
 
-Help the user apply RAT: Riskiest Assumption Test.
+RAT means Riskiest Assumption Test. Find the assumption that could invalidate a meaningful decision, then choose the cheapest test capable of answering it. Preserve the user's goal; a proposed solution may be only one way to reach it.
 
-The goal is not to build the full product or feature. The goal is to find the assumption that could kill the idea fastest, then design the cheapest credible test for it.
+Use RAT for a bet with uncertainty and a material cost of being wrong. Skip factual lookups, pure creation without a decision to de-risk, casual low-stakes choices, and requests for encouragement alone.
 
-## Fit Gate
+## Resources
 
-Use RAT when the user has a meaningful bet, decision, or hypothesis with real uncertainty and a cost of being wrong.
+- Read [references/rat-framework.md](references/rat-framework.md) for the assumption record, evidence rules, ranking, and result states. This is the canonical contract for RAT outputs.
+- Read [references/experiment-menu.md](references/experiment-menu.md) when selecting a test. Match the test to the claim; there is no universal cheapest-first ladder of methods.
+- Use [assets/rat-canvas.md](assets/rat-canvas.md) when a reusable or saved artifact is requested.
+- Read [references/aird-handoff.md](references/aird-handoff.md) when RAT is invoked inside AIRD or a handoff to AIRD is requested. Standalone RAT does not launch AIRD.
 
-Do not run RAT for:
+## Workflow
 
-- factual lookups with one correct answer;
-- pure creation tasks with no decision to de-risk;
-- casual low-stakes "should I" prompts;
-- generic validation where the user only wants encouragement.
+### 0. Frame The Decision
 
-## Core Principle
+Start with a short scan of the 2-3 highest-signal authorized sources: named files, relevant repo docs, PRD, roadmap, research, metrics, pricing, existing experiments, and `AGENTS.md`. Inspect code only when feasibility, integration, permissions, security, reliability, scale, or AI quality depends on it.
 
-Always prioritize the assumption that is both:
+State the decision, user/system, desired outcome, current alternative, evidence, missing information, and cost of being wrong. Capture deadline and constraints; market, price, and channel only when relevant.
 
-1. Highly uncertain.
-2. Highly damaging if false.
+Ask a targeted question when its answer could change the first risk, the test threshold, or safe execution. Otherwise state the assumption and continue. Missing facts remain missing; do not invent evidence, a budget, or a measured failure probability.
 
-A risky assumption is not just something unknown. It is something that, if false, would make the whole idea, feature, or plan fail.
+Restate the bet in one sentence, for example:
 
-## Inputs To Inspect
+> In [context], [user or system] can achieve [outcome and success criterion] through [approach], compared with [current alternative].
 
-If available, inspect:
+Choose **design a test** or **assess supplied results**. Respect existing task authorization; analysis alone does not launch probes, spending, contacts, or data transfers.
 
-- product description, user problem, target customer, current repo docs, roadmap, requirements, PRD, UX mocks;
-- metrics, existing experiments, pricing or business model, GTM plan, technical design, user research notes;
-- code or architecture only when assumptions depend on feasibility, integrations, scale, security, reliability, data access, or AI/model quality.
+### 1. Map Assumptions And Evidence
 
-If information is missing, infer reasonable assumptions and mark them as assumptions. Ask questions only if the task is blocked.
+Cover desirability, viability, feasibility, usability, adoption, and compliance/trust using the framework. Include product-specific risks at actor, data, integration, and operational boundaries.
 
-Use `references/rat-framework.md` for category definitions and scoring rules. Use `references/experiment-menu.md` when choosing a test type. Use `assets/rat-canvas.md` when the user wants a reusable canvas or artifact.
+Use the framework's assumption record: stable IDs, falsifiable claims, scope, dependencies, and evidence for/against. Reuse upstream IDs and retain the history of changed claims and open risks.
 
-## RAT Workflow
+### 2. Pressure-Test From Five Lenses
 
-### 0. Frame The Context
+Review the map yourself unless the user explicitly requests parallel agents:
 
-Before scoring, quickly enrich the user's prompt with relevant context. Spend up to 30 seconds looking for the 2-3 highest-signal files or facts when they are available:
+- **Contrarian:** What hidden blocker or false premise defeats the bet?
+- **First principles:** What outcome matters, and is this approach necessary?
+- **Expansionist:** What stronger offer or adjacent opportunity is being missed?
+- **Outsider:** What is confusing or obvious only to insiders?
+- **Executor:** What credible check could happen Monday with little build or coordination?
 
-- files the user explicitly mentioned or attached;
-- current repo docs, roadmap, PRD, requirements, metrics, research notes, launch notes, or pricing data;
-- project guidance files such as `AGENTS.md`, `README.md`, product docs, or memory/context folders when they are clearly relevant.
+Use the lenses to find missing assumptions and contradictions. They do not supply evidence.
 
-Frame the RAT neutrally:
+### 3. Select The First Risk
 
-1. What decision, idea, or bet is being tested.
-2. Who the target user/customer is.
-3. What evidence is already known.
-4. What is assumed or missing.
-5. What is at stake if the bet is wrong.
+Apply the framework's order: resolve disproof, identify open critical dependencies, then rank uncertainty. `Uncertainty x Impact` is an ordinal aid within that order; testability is not a risk multiplier.
 
-Do not add your own opinion while framing. If the request is too vague to identify the bet, ask one clarifying question and then proceed.
+Pick the first risk and, when useful, up to two independent follow-ups. Explain consequences, evidence gaps, and dependencies before cost. Check for easy-test bias, ignored opposing evidence, and affected downstream decisions.
 
-### 1. Restate The Idea
+### 4. Try Removing The Dependency
 
-Summarize the idea in one clear sentence:
+Before designing a probe, ask whether the risky dependency can be removed while retaining the essential outcome: reduce the promise, use a manual step, drop an integration, reuse an existing capability, or choose another approach. State the tradeoff and any replacement risk. Do not silently redefine the user's goal or claim that a removed dependency was validated.
 
-> We believe [target user] has [problem] and will use/pay for [solution] because [reason].
+### 5. Design Or Assess The Test
 
-If the idea is unclear, create the best possible version from available context and mark assumptions.
+For design, complete the framework's test card before execution, including thresholds, sample/evidence sufficiency, owner, budget, and ambiguous outcomes. Choose the lightest credible method from the menu; a smaller adequate test takes precedence over a full MVP.
 
-### 2. List Assumptions
+For results, attach the actual execution record and judge it against the card and tested scope. Missing execution evidence leaves a plan `untested`; an executed test unable to answer the claim is `insufficient_data`. Feedback or command success cannot close a different claim.
 
-Generate assumptions across:
+A refuted critical dependency pauses dependent decisions. Inconclusive evidence needs a bounded follow-up, scope change, or decision owner; preserve independent decisions and evidence.
 
-- **Desirability**: real problem, pain frequency/intensity, current alternatives, behavior change.
-- **Viability**: willingness to pay, pricing, market size, value capture, sales motion.
-- **Feasibility**: buildability, data/API access, permissions, infrastructure, model quality, accuracy, latency, reliability, scalability.
-- **Usability**: comprehension, workflow completion, trust, fit with current process.
-- **Adoption**: buyer, user, approver, blocker, habits, incentives, integrations, politics.
-- **Compliance / trust**: privacy, security, legal, reputation, explainability, data/model trust.
+### 6. Return A Compact Decision
 
-### 3. Pressure-Test From Five Lenses
+Lead with the decision being examined, the first risk and reason, the next action, and the number/IDs of open critical assumptions. Scale confidence to the evidence and name the most useful missing input.
 
-Before picking the RAT, review the assumption map through five lenses. Do this yourself unless the user explicitly asks for parallel agents.
+Include a concise assumption table:
 
-- **Contrarian**: What fatal flaw, hidden blocker, or false premise would make this fail?
-- **First principles**: What problem are we actually solving, and is this the right bet?
-- **Expansionist**: If this works, what upside, adjacent market, or stronger offer is being underweighted?
-- **Outsider**: What is confusing, jargon-heavy, or obvious only to insiders?
-- **Executor**: What can be tested Monday morning with the least build, spend, and coordination?
+| ID | Claim and scope | Category | Critical / depends on | Evidence for / against (source IDs) | Uncertainty / Impact | Outcome | Decision / owner |
+|---|---|---|---|---|---|---|---|
 
-Use these lenses to add missing assumptions, sharpen wording, and expose blind spots. Do not let the lenses replace evidence-based scoring.
+Show the selected test card, actual result if available, material blind spots, and continue/pivot/stop conditions. Define whether "continue" permits another test, a constrained trial, or implementation. Give the next action once; use the canvas for a larger artifact.
 
-### 4. Score Assumptions
+When handing off to AIRD, carry the same IDs, evidence, and open critical risks through the handoff reference. Do not change package readiness or mark risks proven from a test plan.
 
-Score each assumption from 1 to 5:
+## Domain Checks And Interview Questions
 
-- `Uncertainty`: how little evidence exists.
-- `Impact`: how badly the idea fails if false.
-- `Testability`: how quickly and cheaply it can be tested.
+- **B2B:** distinguish user, buyer, approver, and blocker; inspect commitment, procurement, incentives, and switching costs.
+- **AI:** consider data access, representative evaluation data, error/hallucination classes, trust, model/prompt versions, latency, and cost. A manual simulation can test usefulness without proving model quality.
+- **Technical:** inspect integration contracts, permissions, reliability, scalability, security, maintenance, and dependency assumptions.
 
-Calculate:
-
-```txt
-Risk Score = Uncertainty x Impact
-Priority Score = Risk Score x Testability
-```
-
-### 5. Pick The RAT
-
-Choose the top 1-3 assumptions. The #1 RAT should be the assumption that gives the most learning with the least building.
-
-Prefer tests that can be done before implementation. Do not recommend a full MVP if a cheaper RAT can test the same assumption.
-
-Run a final blind-spot check before committing:
-
-1. Which high-priority assumption has the strongest evidence against it?
-2. Which scored assumption looks important only because it is easy to test?
-3. What did the first pass miss about buyers, blockers, trust, or execution?
-4. What single test would most change the decision?
-
-### 6. Design Tests
-
-For each top assumption, define:
-
-- assumption;
-- why it is risky;
-- test type and setup;
-- target audience;
-- success metric and failure metric;
-- timebox;
-- required sample size or evidence level;
-- decision rule;
-- what to do if the test passes;
-- what to do if the test fails.
-
-### 7. Choose Test Type
-
-Prefer the lightest credible test, roughly in this order:
-
-1. Desk research.
-2. Customer interview.
-3. Smoke test.
-4. Fake-door test.
-5. Landing page test.
-6. Clickable prototype.
-7. Concierge MVP.
-8. Wizard-of-Oz test.
-9. Technical spike.
-10. Paid pilot.
-11. Full MVP.
-
-## Output Format
-
-Always return this structure:
-
-```md
-## RAT Summary
-
-One-paragraph summary of the framed idea, the biggest risk, and the evidence already known.
-
-## Assumption Map
-
-| # | Assumption | Category | Uncertainty 1-5 | Impact 1-5 | Testability 1-5 | Priority |
-|---|---|---|---:|---:|---:|---:|
-
-## Pressure-Test Notes
-
-- Agreement:
-- Tension:
-- Blind spots caught:
-
-## Top RAT
-
-### Assumption
-
-State the riskiest assumption.
-
-### Why This Can Kill The Idea
-
-Explain clearly.
-
-### Fastest Credible Test
-
-Describe the test.
-
-### Test Design
-
-- Test type:
-- Audience:
-- Setup:
-- Success metric:
-- Failure metric:
-- Timebox:
-- Decision rule:
-
-### Expected Learnings
-
-Explain what the team will know after the test.
-
-## Next 3 Actions
-
-Give concrete next steps.
-
-## Kill / Pivot / Continue Rule
-
-- Continue if:
-- Pivot if:
-- Kill if:
-
-## One Thing To Do First
-
-State the single next test or evidence-gathering step.
-```
-
-End with the single best next test.
-
-## Rules
-
-- Be skeptical but useful.
-- Do not validate the idea just to be nice.
-- Do not say "build MVP" unless necessary.
-- Prefer evidence over opinions.
-- Separate facts from assumptions.
-- Make tests cheap, fast, and concrete.
-- If the user already has data, use it.
-- If data is missing, say exactly what evidence is needed.
-- Avoid vague experiments like "ask users if they like it".
-- Interviews must test behavior, pain, current alternatives, and willingness to commit.
-- For B2B ideas, include buyer, user, approver, and blocker assumptions.
-- For AI products, include trust, accuracy, latency, evaluation, data access, and hallucination-risk assumptions.
-- For technical ideas, include integration, scalability, maintainability, security, and dependency assumptions.
-
-## Interview Question Rules
-
-Good questions ask about past behavior.
-
-Prefer:
-
-- "When was the last time this happened?"
-- "What did you do instead?"
-- "How much time or money did it cost?"
-- "Who else was involved?"
-- "What happens if this problem is not solved?"
-- "What tool do you use now?"
-- "Have you paid for a workaround?"
-
-Avoid:
-
-- "Would you use this?"
-- "Would you pay for this?"
-- "Do you like this idea?"
-- "Does this sound useful?"
+Interviews ask about actual episodes, outcomes, alternatives, expenditure, and commitments. Prefer "When did this last happen?", "What did you do instead?", "What did it cost?", "Who was involved?", "What happened if it stayed unresolved?", and "Have you paid for a workaround?" Avoid "Would you use/pay for this?" or "Do you like this idea?" as validation.

@@ -2,7 +2,8 @@
 name: docs
 description: Writes and refines concise technical documentation and maintains existing ExecPlans. Use for docs edits and plan upkeep — not architecture invention.
 tools: Read, Edit, Write, Grep, Glob, Skill
-model: sonnet
+model: claude-sonnet-5-5
+effort: xhigh
 ---
 
 Role: Docs / Plan Maintainer.

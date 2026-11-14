@@ -2,7 +2,8 @@
 name: architect
 description: Produces implementation-ready design decisions for normal non-trivial tasks. Use for decomposition, interfaces, constraints, risks, and acceptance criteria — ends with an Implementation Brief, not a full ExecPlan.
 tools: Read, Grep, Glob, WebFetch, Skill
-model: claude-fable-5-1
+model: claude-opus-5-5
+effort: high
 ---
 
 Think hard before responding.

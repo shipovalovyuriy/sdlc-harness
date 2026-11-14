@@ -14,7 +14,7 @@ Explicit invocation of this skill counts as an explicit request for delegation a
 The same token model as `$aird-delivery-loop` applies: **no long-lived all-remembering orchestrator.** Everything durable lives in the package files; the orchestrator context is a disposable working buffer, and a fresh session must be able to continue from `STATE.md`, `00-discussion-log.md`, and—after wave acceptance—`REVIEW-MANIFEST.json`. Proactively hand the root task over after six bounded phases/slices or at about 70% context, whichever comes first; write `.continue-here.md` before ending the current root task.
 
 - **Phase boundaries are checkpoints.** After each discovery phase (intake, discussion, recon, product/UX, risks, TRD, plan), write the outcome into the package and `STATE.md`. 
-- **The orchestrator holds decisions, not bulk.** Subagents (`explorer`, `product-analyst`, `architect`, `risk-analyst`, `uiux-designer`) read sources and write package files directly; they return verdicts, key facts, and paths — not transcripts or file dumps. The orchestrator's working memory is the running decision table plus `STATE.md`, not the docs' contents.
+- **The orchestrator holds decisions, not bulk.** Subagents read sources and write package files directly when their available tools permit it. Before assigning file authorship, check that the selected role has file-writing tools; otherwise give authorship to `docs` with the scoped brief and named source sections, and keep the read-only specialist for analysis. Do not broaden the specialist's permissions. Subagents return verdicts, key facts, and paths — not transcripts or file dumps. The orchestrator's working memory is the running decision table plus `STATE.md`, not the docs' contents.
 - **Pay for judgment, not for typing.** High-effort models go to judgment roles — `architect`, `architect-deep`, `reviewer`, `risk-analyst`, `cybersec`. Mechanical work — document edits, finding fixes, plan/index sync, the discovery summary — goes to the lighter configured agents (`docs`, `worker`, `explorer`) at low or medium effort. A subagent that inherits the orchestrator's model and effort is the most expensive way to retype a table.
 - **Short-lived authors.** An agent re-reads its whole context on every call, so its cost grows roughly with the square of its lifetime: one author that wrote TRD, contracts, and data models in 154 calls at a 640k-token context cost 62M tokens, more than all of intake, discussion, reconnaissance, and probes together (74M). One author writes one document (or one section of a large one), is told the exact files and headings to read, and returns — budget about 40 calls and 150k context. An author that needs more was given too much: stop it and split the task, do not let it run on. Short, narrow agents are why the risk and discussion half of discovery is cheap; keep the authoring half the same shape.
 - **Runtime probing is explorer work.** ssh, kubectl, curl, deploy checks, and log reading during reconnaissance run inside a scoped `explorer` (or a dedicated recon subagent) whose findings land in `codemap.md`/AIRD docs as evidence pointers. The main session never accumulates raw remote output.
@@ -592,6 +592,16 @@ Declare each edge case in `01-prd.md` as an `EC-NN` table row and record the
 selects. A case that is written in the requirements, covered by a check, and
 selected by no gate is protected by nothing.
 
+**An irreversible operation gets a "first run on the snapshot" edge case.**
+When the package ships an operation that cannot be undone (cleanup without a
+backup, a destructive migration, a bulk rewrite), `01-prd.md` declares an
+`EC-NN` for the state right after its first run on representative data and
+maps it to a gate that runs on a snapshot copy. The case asserts every derived
+field the UI or API shows afterwards (last success dates, ages, counters,
+"new" markers, statuses), not only which rows survive: a kept row set can
+still erase the history a derived field is computed from (eval
+`irreversible-first-run-edge-case`).
+
 **Write workorders from a brief, not from the package.** Before any workorder is written, the orchestrator drafts the `07-implementation-plan.md` index table as the brief: one row per workorder with its objective, the exact TRD/contract/data-model sections (file + heading) it implements, write paths, `depends_on`, gates, and DoD items. Workorders are then written by one author on a lighter configured agent (`docs`/`worker`, low or medium effort) in batches of three or four, each batch with a fresh context that reads only its index rows and the named sections — never parallel writers that each load the whole package (four did, at 560k contexts, for 154M tokens). `08-quality-gates.md` and `09-dod.md` are separate short authors too, not the plan author's tail. Once a workorder exists its frontmatter owns scope: drop the write-path column from the index, keeping objective, sections, and `depends_on`, so the two cannot drift.
 
 Build the smallest value-producing implementation wave first. Do not fully
@@ -668,6 +678,16 @@ references and none creates, and a file one workorder must edit to satisfy its
 own acceptance criteria while another workorder owns the write scope. Disjoint
 write scopes achieved by cutting a coupled seam produce two blocked workorders,
 not two independent ones. An explicit `None.` is a valid answer.
+
+**A library API is `exists-in-repo` only in the installed version.** When a
+workorder relies on a specific option, function, flag, or hook of a third-party
+library (`skipPollingIfUnfocused`, a driver setting, a middleware option), its
+Scope Evidence proves that the API exists in the version the repository
+actually installs: `npm ls <pkg>` / `go list -m <module>` plus a `grep` in the
+installed sources (`node_modules/<pkg>/`, the module cache). Documentation or
+examples of a newer major version are not evidence. When the API is missing,
+the workorder names the replacement or the upgrade as a recorded decision
+instead of leaving the worker to discover it (eval `library-api-installed-version`).
 
 **Soft sizing proxies.** The validator warns — fatal under the `--strict` run
 discovery must use — when a workorder exceeds six non-test `allowed_write_paths`,
@@ -859,6 +879,14 @@ call:
    an error or public runtime surface inspected the service-wide error mapper
    and route/export/registration root; every needed integration path is inside
    both `impact_radius` and `allowed_write_paths`.
+7. **One source per repeated rule.** A behavioural rule stated in more than one
+   artifact (TRD, data model, contract, workorder) - what is masked or cut,
+   on write or on read, for which datasets or roles - has one owning source
+   (the contract for runtime behaviour, the data model for storage) and the
+   other places reference it instead of restating it. The reviewer greps the
+   rule's keywords across the package; two statements that differ in scope or
+   condition are a blocking finding, decided before acceptance rather than by
+   the delivery reviewer (eval `one-source-per-rule`).
 
 These are the final allowed blocking `F-` IDs. After all registered findings
 meet their original closure criteria, fetch the target base again and record

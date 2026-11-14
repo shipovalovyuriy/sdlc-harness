@@ -44,7 +44,7 @@ or the workorder explicitly requires live probing as part of its code change.
 
 ## Execution Rules
 
-1. **Count actual execution.** Capture executed, passed, failed, and skipped counts. For runners that return exit 0 when tests skip, parse verbose/JSON/JUnit output or invoke required named tests individually. A required test with no execution proof is skipped.
+1. **Count actual execution.** For a new or changed verification script, first run available syntax/import/collection checks and, when supported, the smallest impacted scenario before an expensive full run; those harness checks do not replace the required runtime gate. Capture executed, passed, failed, and skipped counts. For runners that return exit 0 when tests skip, parse verbose/JSON/JUnit output or invoke required named tests individually. A required test with no execution proof is skipped.
 2. **Use production-equivalent dependencies.** Exercise the real database dialect/protocol and changed external boundaries. In-memory substitutes and mocks may supplement but cannot satisfy this gate.
 3. **Protect migration history.** Compare touched migration files with the delivery base. Treat edits to already-shipped migrations as blocking drift unless deployment history proves they were never applied. Add a new forward migration for shipped-state changes.
 4. **Test both database starting states.** Apply all migrations to an empty database, then separately restore or construct the last shipped schema/data and apply only the upgrade. Reopen/re-run migrations to prove idempotency.

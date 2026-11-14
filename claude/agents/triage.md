@@ -2,7 +2,8 @@
 name: triage
 description: Cheap router that picks the smallest correct next agent or decides direct handling is enough. Use FIRST when the correct route for a non-trivial task is unclear.
 tools: Read, Grep, Glob
-model: sonnet
+model: claude-haiku-4-5-20251001
+effort: low
 ---
 
 Role: Triage Router.

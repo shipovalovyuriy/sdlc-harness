@@ -26,3 +26,5 @@ config.local.toml
 logs/
 tmp/
 *.bak
+__pycache__/
+*.py[cod]

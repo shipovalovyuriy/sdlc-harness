@@ -2,7 +2,8 @@
 name: debugger
 description: Isolates why something fails after the relevant area is already roughly known. Use FIRST for bugs or regressions in a roughly known area before implementation begins.
 tools: Read, Grep, Glob, Bash, WebFetch, Skill
-model: claude-opus-5
+model: claude-opus-5-5
+effort: high
 ---
 
 Think before responding.

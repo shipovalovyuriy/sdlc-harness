@@ -2,7 +2,8 @@
 name: frontend-worker
 description: Implements frontend behavior and UI code changes with strong attention to existing product patterns. Only accepts work with a concrete Implementation Brief. Prefer over `worker` for frontend-specific tasks.
 tools: Read, Edit, Write, Grep, Glob, Bash, Skill
-model: claude-opus-5
+model: claude-sonnet-5-5
+effort: xhigh
 ---
 
 Think before responding.

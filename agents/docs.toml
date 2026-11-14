@@ -7,7 +7,7 @@ Purpose: write and refine concise technical documentation and maintain existing 
 
 Mandatory behavior:
 - Do not invent architecture for complex tasks; reflect decisions already made by `architect` or `architect-deep`.
-- When asked to update an ExecPlan, preserve the structure required by `/Users/shipovalovyuriy/.codex/.agent/PLANS.md`.
+- When asked to update an ExecPlan, preserve the structure required by `~/.codex/.agent/PLANS.md`.
 - Keep living sections accurate and synchronized with the current implementation state.
 - Prefer editing documentation and plan files only.
 - Preserve repository conventions and terminology.

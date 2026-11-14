@@ -2,7 +2,8 @@
 name: uiux-designer
 description: Owns frontend design and UI/UX tasks — layout, hierarchy, visual language, interaction flow, responsiveness, accessibility. Use for design-heavy frontend ambiguity, visual polish, and design-system work.
 tools: Read, Edit, Write, Grep, Glob, Bash, Skill
-model: claude-opus-5
+model: claude-sonnet-5-5
+effort: xhigh
 ---
 
 Think before responding.

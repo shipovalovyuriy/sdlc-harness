@@ -456,6 +456,87 @@ try {
     assertResult('complete typed backend evidence passes', run(packageDir), 0);
   }
 
+  // Release readiness needs the same evidence as completion; counters cannot
+  // override the current verdicts or execution counts in the evidence tables.
+  for (const status of ['ready_for_release', 'complete']) {
+    {
+      const { packageDir } = makeRepository(`unfinished-${status}`, [{ id: 'WO-01' }]);
+      acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+      setState(packageDir, { status });
+      assertResult(`${status} rejects unfinished accepted work`, run(packageDir), 1, 'WO-01 to be done');
+    }
+    {
+      const { packageDir } = makeRepository(`future-wave-${status}`, [
+        { id: 'WO-01', status: 'done', wave: 'W1' },
+        { id: 'WO-02', status: 'draft', wave: 'W2' },
+      ]);
+      acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+      setState(packageDir, { status, activeWave: 'W1' });
+      assertResult(`${status} ignores unaccepted draft backlog`, run(packageDir), 0);
+    }
+    {
+      const { packageDir } = makeRepository(`accepted-future-wave-${status}`, [
+        { id: 'WO-01', status: 'done', wave: 'W1' },
+        { id: 'WO-02', status: 'ready', wave: 'W2' },
+      ]);
+      acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+      acceptWave(packageDir, { wave: 'W2', baseRef: 'main' });
+      setState(packageDir, { status, activeWave: 'W1' });
+      assertResult(`${status} rejects unfinished work in another accepted wave`, run(packageDir), 1, 'WO-02 to be done');
+    }
+    for (const surface of ['backend', 'frontend']) {
+      const backend = surface === 'backend';
+      const { packageDir } = makeRepository(`release-evidence-${status}-${surface}`, [{
+        id: 'WO-01', status: 'done', surface, runtimeProfiles: backend ? ['api'] : ['browser'],
+      }]);
+      acceptWave(packageDir, { wave: 'W1', baseRef: 'main' });
+      setState(packageDir, { status });
+      const evidenceName = backend ? '10-backend-verification.md' : '10-ui-verification.md';
+      assertResult(`${status} requires ${surface} evidence`, run(packageDir), 1, `${evidenceName} is missing`);
+      if (backend) addBackendEvidence(packageDir); else addUIEvidence(packageDir);
+      assertResult(`${status} accepts valid ${surface} evidence`, run(packageDir), 0);
+
+      const backendTable = (verdict, counts = ['1', '1', '0', '0']) => `
+## Required Check Accounting
+
+| Gate | Required | Exact command / request | Executed | Passed | Failed | Skipped | Result | Evidence path |
+|---|---|---|---:|---:|---:|---:|---|---|
+| API permission check | yes | tests -run 'Allowed\\|Denied' | ${counts.join(' | ')} | ${verdict} | evidence/api.log |
+`;
+      const uiTable = (verdict) => `
+## State Checks
+
+| State | Flow / route | Result (pass/fail) | Evidence (screenshot path / note) |
+|---|---|---|---|
+| Permission denied | /private | ${verdict} | evidence/ui-happy.png |
+`;
+      for (const verdict of ['fail', 'blocked-no-evidence', 'waived', 'skipped', 'pending', '']) {
+        if (backend) addBackendEvidence(packageDir, validBackendEvidence + backendTable(verdict));
+        else addUIEvidence(packageDir, validUIEvidence + uiTable(verdict));
+        assertResult(`${status} rejects ${surface} row ${verdict || '(empty)'}`, run(packageDir), 1, evidenceName);
+      }
+      if (backend) {
+        addBackendEvidence(packageDir, validBackendEvidence + backendTable('pass').split('| API permission check')[0]);
+        assertResult(`${status} rejects an empty backend accounting table`, run(packageDir), 1, 'no check rows');
+        for (const counts of [['0', '0', '0', '0'], ['1', '1', '1', '0'], ['1', '1', '0', '1']]) {
+          addBackendEvidence(packageDir, validBackendEvidence + backendTable('pass', counts));
+          assertResult(`${status} rejects backend pass without clean execution`, run(packageDir), 1, evidenceName);
+        }
+        addBackendEvidence(packageDir, validBackendEvidence + backendTable('not_required'));
+        assertResult(`${status} rejects required backend row marked not_required`, run(packageDir), 1, evidenceName);
+        addBackendEvidence(packageDir, validBackendEvidence + backendTable('pass') + '| Schema upgrade | no | - | 0 | 0 | 0 | 0 | not_required | - |\n\n## Notes\n\nThe API check failed and was skipped initially; the fixed run above passed.\n');
+        assertResult(`${status} accepts fixed backend history and escaped pipes`, run(packageDir), 0);
+        addBackendEvidence(packageDir, validBackendEvidence + backendTable('pass') + '| Optional diagnostic | no | - | 1 | 0 | 1 | 0 | fail | evidence/api.log |\n');
+        assertResult(`${status} does not promote optional diagnostics to required gates`, run(packageDir), 0);
+      } else {
+        addUIEvidence(packageDir, validUIEvidence + uiTable('pass').split('| Permission denied')[0]);
+        assertResult(`${status} rejects an empty UI state table`, run(packageDir), 1, 'no check rows');
+        addUIEvidence(packageDir, validUIEvidence + uiTable('pass') + '\n## Issues Found And Fixed\n\nThe previous permission check failed; it now passes.\n\n| Previous state | Result |\n|---|---|\n| Earlier attempt | blocked-no-evidence |\n');
+        assertResult(`${status} accepts fixed UI history`, run(packageDir), 0);
+      }
+    }
+  }
+
   {
     const { packageDir } = makeRepository('budget-limit', Array.from({ length: 6 }, (_, index) => ({
       id: `WO-${String(index + 1).padStart(2, '0')}`,

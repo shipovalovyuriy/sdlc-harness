@@ -45,9 +45,14 @@ verification, review/QA, optional commit.
 - `prompt-generator` — prompt engineering for any target.
 
 Vendored third-party skills live at the `skills/` top level:
-`figma-implement-design`, `pdf`, `playwright`, `security-best-practices`,
-`spreadsheet`. The former vendored `figma` skill was dropped: the name is
+`figma-implement-design`, `humanizer`, `pdf`, `playwright`,
+`security-best-practices`, `skill-doctor`, `spreadsheet`. The former vendored `figma` skill was dropped: the name is
 taken by the HyperFrames `figma` skill, and an install would overwrite it.
+
+`skill-doctor` grades local conversation history and proposes evidence-backed
+skill changes. Its multi-runtime documentation is preserved during both
+installs. The bundled collector includes current Codex message-format and
+`skills/public` fixes. Portable AIRD regression scenarios are in `evals/`.
 
 ## Agents
 

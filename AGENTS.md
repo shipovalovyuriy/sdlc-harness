@@ -16,7 +16,7 @@ provides a more specific source or instruction.
   multi-service changes, schema or API contract changes, migrations, or
   unresolved high-impact tradeoffs.
 - ExecPlans must conform to
-  `/Users/shipovalovyuriy/.codex/.agent/PLANS.md`.
+  `~/.codex/.agent/PLANS.md`.
 - For normal non-trivial work, keep a brief implementation plan with explicit
   success criteria and verification steps.
 

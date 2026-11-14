@@ -48,6 +48,9 @@ compact verdicts — never transcripts.
 
 The loops are deliberately stingy about spawning:
 
+- Check file-writing tools before assigning authorship. A read-only specialist
+  supplies analysis; `docs` receives the scoped authoring brief and named
+  source sections. Keep the specialist's permissions unchanged.
 - The orchestrator implements sequential slices itself; implementation workers
   exist only for actual parallelism (two dependency-ready slices with disjoint
   write sets) or context headroom (orchestrator at/above ~60% context).

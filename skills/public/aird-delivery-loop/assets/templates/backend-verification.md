@@ -32,7 +32,7 @@ Final fail-closed runtime evidence for backend/API/data/migration/deployable-ser
 
 ## Required Check Accounting
 
-`required_checks` counts named assertions/tests/gates that must execute. `passed_checks` must equal it. A runner exit code is evidence only when discovery/execution counts prove the required checks actually ran.
+`required_checks` counts named assertions/tests/gates that must execute. `passed_checks` must equal it. A runner exit code is evidence only when discovery/execution counts prove the required checks actually ran. Final frontmatter must agree with the current table rows. Use `fail` for a failed check and `blocked-no-evidence` for a required check that was skipped, unavailable, or waived; a required row cannot be `not_required`. Record resolved failures in the history below without changing a current failing row to `pass`.
 
 | Gate | Required | Exact command / request | Executed | Passed | Failed | Skipped | Result | Evidence path |
 |---|---|---|---:|---:|---:|---:|---|---|

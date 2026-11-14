@@ -2,7 +2,8 @@
 name: worker
 description: Generalist programmer for small, mixed-scope, or fallback code changes when a domain-specific worker is unnecessary. Only accepts work with a concrete Implementation Brief.
 tools: Read, Edit, Write, Grep, Glob, Bash, Skill
-model: claude-opus-5
+model: claude-sonnet-5-5
+effort: xhigh
 ---
 
 Think before responding.

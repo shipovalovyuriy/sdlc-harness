@@ -131,6 +131,45 @@ function read(path) {
   try { return readFileSync(path, 'utf8'); } catch { return ''; }
 }
 
+function inspectVerificationRows(text, evidenceName, heading) {
+  // Only current declared verdicts count; failure words in commands or in
+  // resolved-issue prose must not turn a successful gate into a failure.
+  const body = section(text, heading) || (heading === 'State Checks' ? section(text, 'UI Verification') : '');
+  const table = body.split(/\r?\n/)
+    .filter((line) => /^\s*\|/.test(line))
+    .map((line) => line.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map((cell) => cell.trim()))
+    .filter((cells) => !cells.every((cell) => !cell || /^:?-+:?$/.test(cell)));
+  if (!table.length) return;
+  const [headers, ...rows] = table;
+  if (!rows.length) {
+    err(`${evidenceName} ${heading} table has no check rows`);
+    return;
+  }
+  const resultIndex = headers.findIndex((cell) => /^(result(?:\s*\([^)]*\))?|verdict)$/i.test(cell));
+  if (resultIndex < 0) {
+    err(`${evidenceName} ${heading} table must declare a Result or Verdict column`);
+    return;
+  }
+  const requiredIndex = headers.findIndex((cell) => /^required$/i.test(cell));
+  const countIndices = ['Executed', 'Passed', 'Failed', 'Skipped'].map((field) => headers.findIndex((cell) => cell === field));
+  for (const row of rows) {
+    if (requiredIndex >= 0 && /^(no|false|not_required)$/i.test(row[requiredIndex] ?? '')) continue;
+    const verdict = (row[resultIndex] ?? '').toLowerCase();
+    const required = requiredIndex < 0 || /^(yes|true|required)$/i.test(row[requiredIndex] ?? '');
+    if (verdict === 'not_required' && !required) continue;
+    if (verdict !== 'pass') {
+      err(`${evidenceName} ${heading} row "${row[0]}" result is ${verdict || '(missing)'}; required checks must pass`);
+      continue;
+    }
+    if (countIndices.every((index) => index >= 0)) {
+      const [executed, passed, failed, skipped] = countIndices.map((index) => /^\d+$/.test(row[index] ?? '') ? Number(row[index]) : Number.NaN);
+      if (!Number.isInteger(executed) || executed <= 0 || passed !== executed || failed !== 0 || skipped !== 0) {
+        err(`${evidenceName} ${heading} row "${row[0]}" pass requires positive executed=passed counts and zero failed/skipped checks`);
+      }
+    }
+  }
+}
+
 function inspectSharedErrorAndWiringPreflight(workorder) {
   const heading = /^##\s+Shared Error And Public Wiring Pre-flight\s*$/im;
   const start = workorder.text.search(heading);
@@ -1038,11 +1077,19 @@ const backendRuntimeWorkorders = completedWorkorders.filter((workorder) =>
   && workorder.runtimeProfiles.some((profile) => BACKEND_RUNTIME_PROFILES.has(profile))
 );
 const backendProfiles = new Set(backendRuntimeWorkorders.flatMap((workorder) => workorder.runtimeProfiles));
+const releaseReady = ['ready_for_release', 'complete'].includes(status);
 
-if (status === 'complete' && frontendCompleted) {
+if (releaseReady) {
+  const releaseWorkorders = new Set(validAcceptedWaves.flatMap((wave) => waveResults[wave].workorders));
+  for (const workorder of workorders.filter((entry) => releaseWorkorders.has(entry.id))) {
+    if (workorder.status !== 'done') err(`status ${status} requires accepted workorder ${workorder.id} to be done; got ${workorder.status}`);
+  }
+}
+
+if (releaseReady && frontendCompleted) {
   const evidenceName = '10-ui-verification.md';
   if (!filesOnDisk.has(evidenceName)) {
-    err(`user-facing change is complete but ${evidenceName} is missing`);
+    err(`user-facing change is ${status} but ${evidenceName} is missing`);
   } else {
     const evidenceText = read(join(packageDir, evidenceName));
     const evidence = parseFrontmatter(evidenceText);
@@ -1056,14 +1103,9 @@ if (status === 'complete' && frontendCompleted) {
     // whole prose punished honest write-ups ("the dev server could not run at
     // first, fixed by ..."), which pushed authors to delete the history.
     if (evidence.blocked_reason && evidence.blocked_reason !== 'none') {
-      err(`${evidenceName} declares blocked_reason "${evidence.blocked_reason}"; status cannot be complete`);
+      err(`${evidenceName} declares blocked_reason "${evidence.blocked_reason}"; status cannot be ${status}`);
     }
-    const blockedRows = evidenceText
-      .split(/\r?\n/)
-      .filter((line) => /^\s*\|/.test(line) && /\|\s*blocked-no-evidence\s*\|/i.test(line));
-    if (blockedRows.length) {
-      err(`${evidenceName} has ${blockedRows.length} state row(s) recorded as blocked-no-evidence; status cannot be complete`);
-    }
+    inspectVerificationRows(evidenceText, evidenceName, 'State Checks');
     if (!/^https?:\/\/\S+$/i.test(evidence.preview_url ?? '')) err(`${evidenceName} preview_url must be an HTTP(S) URL`);
     if (!['verify-on-browser', 'playwright'].includes(evidence.browser_tool)) {
       err(`${evidenceName} browser_tool must be verify-on-browser or playwright`);
@@ -1096,12 +1138,14 @@ if (status === 'complete' && frontendCompleted) {
   }
 }
 
-if (status === 'complete' && backendRuntimeWorkorders.length) {
+if (releaseReady && backendRuntimeWorkorders.length) {
   const evidenceName = '10-backend-verification.md';
   if (!filesOnDisk.has(evidenceName)) {
-    err(`typed backend runtime change is complete but ${evidenceName} is missing`);
+    err(`typed backend runtime change is ${status} but ${evidenceName} is missing`);
   } else {
-    const evidence = parseFrontmatter(read(join(packageDir, evidenceName)));
+    const evidenceText = read(join(packageDir, evidenceName));
+    const evidence = parseFrontmatter(evidenceText);
+    inspectVerificationRows(evidenceText, evidenceName, 'Required Check Accounting');
     const integer = (field) => /^\d+$/.test(evidence[field] ?? '') ? Number(evidence[field]) : Number.NaN;
     const required = integer('required_checks');
     const passed = integer('passed_checks');
@@ -1109,7 +1153,7 @@ if (status === 'complete' && backendRuntimeWorkorders.length) {
     const skipped = integer('skipped_checks');
     if (evidence.result !== 'pass') err(`${evidenceName} result must be pass`);
     if (evidence.blocked_reason && evidence.blocked_reason !== 'none') {
-      err(`${evidenceName} declares blocked_reason "${evidence.blocked_reason}"; status cannot be complete`);
+      err(`${evidenceName} declares blocked_reason "${evidence.blocked_reason}"; status cannot be ${status}`);
     }
     if (!Number.isInteger(required) || required <= 0) err(`${evidenceName} required_checks must be a positive integer`);
     if (!Number.isInteger(passed) || passed !== required) err(`${evidenceName} passed_checks must equal required_checks`);

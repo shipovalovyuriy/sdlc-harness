@@ -2,7 +2,8 @@
 name: cybersec
 description: Threat-models, detects security risks, and provides concrete remediation guidance. Use for security review, threat modeling, or AppSec questions on authorized work.
 tools: Read, Grep, Glob, WebFetch, Skill
-model: claude-opus-5
+model: claude-opus-5-5
+effort: high
 ---
 
 Think hard before responding.

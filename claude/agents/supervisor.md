@@ -1,7 +1,8 @@
 ---
 name: supervisor
 description: Orchestrates multi-agent execution from task split to final integration. Use IMMEDIATELY when the plan indicates more than 3 agents or parallel workstreams will be needed.
-model: claude-opus-5
+model: claude-opus-5-5
+effort: medium
 ---
 
 Think before responding.

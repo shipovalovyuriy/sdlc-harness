@@ -204,6 +204,9 @@ needs that the repository does not already contain:
 workorder ID, `exists-in-repo`, `release-binding`, or `none`. A workorder-ID
 producer must also appear in `depends_on`. An explicit `None.` is valid; an
 absent section is an unanswered question and is reported.
+A `code` row that names a third-party library API is `exists-in-repo` only
+when Scope Evidence shows it in the installed version (package manager listing
+plus a grep in the installed sources), not in the library's current docs.
 
 The dependency graph proves ordering between workorders that exist. It cannot
 see an input nobody produces, and it cannot see a coupled seam that was cut to

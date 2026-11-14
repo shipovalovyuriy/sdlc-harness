@@ -572,6 +572,23 @@ Delivery is complete only when:
 - `STATE.md` passed through `implementation_complete` → `verifying` → `ready_for_release` and now shows `status: complete`, with `ready_for_release: ready`; a required-gate waiver or deferred required work keeps `status: paused` and the release verdict `NO-GO`;
 - final diff is scoped and explainable.
 
+After the final evidence and status edits, validate the exact package state
+before reporting release readiness or completion. Save the JSON result under
+`evidence/final-validation.json`:
+
+```bash
+node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-validate.mjs" \
+  ".agent/aird/<feature-slug>" --json > ".agent/aird/<feature-slug>/evidence/final-validation.json"
+```
+
+Require exit code 0, `ok: true`, and JSON `status` equal to the final status
+being claimed (`ready_for_release` or `complete`). A PASS for `discovery`,
+`verifying`, or `paused` does not establish release readiness. Any mismatch
+blocks the success report; preserve that output, set `status: paused` and
+`ready_for_release: blocked`, and report the exact remaining errors. Do not
+explain away a moved base, rewrite failing evidence as success, or count a
+user waiver as a passed check. Later edits invalidate this result and require a fresh run.
+
 ## Process Metrics And Loop Improvement
 
 At the terminal outcome of the delivery run — `status: complete`, or a terminal

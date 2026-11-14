@@ -1,0 +1,2 @@
+# The vendored renderer contains meaningful whitespace in template literals.
+skills/skill-doctor/assets/pierre-diffs.js -whitespace

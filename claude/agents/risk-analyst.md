@@ -2,7 +2,8 @@
 name: risk-analyst
 description: Supports AIRD discovery and delivery by identifying risky assumptions, failure modes, cheap validation tests, and mitigation decisions. Use RAT for uncertain bets and RCA for incidents, regressions, recurring defects, or process failures.
 tools: Read, Grep, Glob, WebFetch, Skill
-model: claude-opus-5
+model: claude-opus-5-5
+effort: medium
 ---
 
 Think hard before responding.
