@@ -33,17 +33,19 @@ If two relationships use the same spacing, users will read them as equally relat
 - Forms, settings surfaces, cards, and reading-heavy content often become clearer when constrained to a narrower max width.
 - Only use full width when the content truly benefits from it: large data grids, media, maps, or multi-panel workflows.
 
-## Cap Each Group So The Next One Stays Reachable
+## Keep Other Tasks Reachable As Content Grows
 
-When a screen stacks several grouped sections, an unbounded first group pushes the rest below
-the fold. The user never learns the later groups exist.
+Choose the page structure with [page composition](page-composition.md) before tuning gaps.
+Two large peer tables stacked at full length can bury a frequent task; shrinking spacing
+does not fix that relationship.
 
-- Show a bounded preview per group (roughly 3-5 items) with an explicit "N more" control.
-- Keep every group's heading and count visible on the first screen, so the shape of the whole
-  set is legible before any scrolling.
-- Let a filter, tab, or rail selection expand exactly one group to full length.
-- The same applies to a secondary list next to a primary one: collapse repeats, cap the
-  preview, and give it less width and less contrast than the primary list.
+- On overview pages, use summaries or bounded previews with a clear route to the full data.
+- In a table workspace, give the main table enough width and a useful working set; a universal
+  3-5-row cap would slow the task. Choose pagination or scrolling to fit the workflow.
+- Make important sibling sections discoverable through an appropriate selector, section
+  navigation, or overview. Every section does not have to fit in the initial viewport.
+- Give supporting content less emphasis when it is secondary; side-by-side content is useful
+  when users need it together and both regions have enough readable width.
 
 ## Grids Are Useful, Not Sacred
 

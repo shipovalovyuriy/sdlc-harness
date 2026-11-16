@@ -22,6 +22,7 @@ This skill is for visual design work that must end in real frontend code. Use it
 - Design the core user task and primary action flow first.
 - Do not begin with navbar, sidebar, page chrome, or decorative layout scaffolding unless the task is explicitly about those surfaces.
 - For new work, read [starting from scratch](references/starting-from-scratch.md).
+- For pages with multiple sections, tables, lists, or a large growing region, read [page composition](references/page-composition.md) before choosing the layout. Map section roles, what must be visible together, and how users reach later sections as content grows.
 
 3. Ground the art direction in visual evidence.
 - For a new surface, redesign, or vague "make it better" request, read [visual exemplars](references/visual-exemplars.md) and inspect at least two relevant images with an image-viewing tool before coding. For a localized pattern change, inspect at least one.
@@ -62,6 +63,7 @@ This skill is for visual design work that must end in real frontend code. Use it
 - Always read [anti-patterns](references/anti-patterns.md) before visual review.
 - When the interface can run locally, render it in a real browser and inspect representative desktop and mobile screenshots. Use the relevant browser or screenshot tooling available in the environment.
 - Compare the render with the design contract, the selected exemplars, and the mandatory quality bar. Check hierarchy, rhythm, alignment, content resilience, overflow, interaction states, and generic AI patterns.
+- For content-heavy pages, use realistic row counts and long labels; inspect the initial viewport and the path to later sections, not only a full-page screenshot. Verify the chosen navigation, disclosure, and scroll behavior on desktop and mobile.
 - Revise the implementation when any quality-bar item fails. Do not treat the first render as the final design.
 
 ## Reference Routing
@@ -77,6 +79,7 @@ This skill is for visual design work that must end in real frontend code. Use it
 - Use the [images visual atlas](references/visual-refactoring-images.md) to inspect photography, image overlays, icon sizing, and user-uploaded media.
 - Use the [finishing visual atlas](references/visual-refactoring-finishing.md) to inspect refined defaults, accents, empty states, fewer borders, and deliberate composition studies.
 - Use [hierarchy and actions](references/hierarchy-and-actions.md) for forms, settings pages, dashboards, tables, CRUD tools, and any interface with competing actions or lots of information.
+- Use [page composition](references/page-composition.md) to choose section order, tabs versus simultaneous views, overview versus workspace, primary-detail layouts, table extent, and scroll behavior. Read it for multi-section pages and any region whose growth can bury another task.
 - Use [layout and spacing](references/layout-and-spacing.md) when the layout feels messy, crowded, over-stretched, or inconsistently grouped.
 - Use [text and typography](references/text-and-typography.md) when readability, copy presentation, labels, headings, metrics, or table text need work.
 - Use [color systems](references/color-systems.md) when defining or cleaning up palettes, neutral ramps, accents, status colors, or contrast handling.
@@ -91,6 +94,7 @@ This skill is for visual design work that must end in real frontend code. Use it
 - The main user task must be obvious within a few seconds.
 - The primary action must be visually dominant without making every other action loud.
 - Spacing must show grouping clearly; adjacent groups should not feel ambiguous.
+- Growing lists and tables must not bury other important tasks without a visible, direct way to reach them. Choose composition and content extent by task; do not force every section above the fold or hide required comparisons behind tabs.
 - Typography must be readable and intentional, not an accumulation of random sizes.
 - Color must come from a system of neutrals, core accents, and state colors instead of ad hoc picks.
 - Forms must set accurate expectations about the resulting content and preserve usable semantics, validation, and focus order.

@@ -9,9 +9,16 @@ Read this before final delivery. If the design depends on several of these mista
 - Making every section equally loud
 - Giving several actions "primary" treatment on the same surface
 - Using borders everywhere instead of grouping with spacing and background contrast
-- Stacking grouped sections at full length, so the first group buries every group below it
-- Placing two lists side by side when one of them is clearly secondary, which hands noise the
-  same visual weight as the primary work
+- Stacking large peer tables or lists at full length so an earlier block buries another
+  important task, without a visible direct route to it
+- Replacing those stacks with tabs when users need to compare the hidden content, or squeezing
+  wide tables into equal columns that make their data unreadable
+- Imposing the same tiny preview limit on every list, or forcing all section headings above
+  the fold at the expense of a useful working area
+- Giving a secondary panel the same space and emphasis as the main work without a task reason
+- Adding nested vertical scroll regions or sticky bars to compensate for a weak page structure
+- Filling the first viewport with oversized page headers, summary cards, and toolbars so the
+  actual task starts below them
 - Rendering repeated identical records as separate rows instead of collapsing them into one
   row with a count
 
