@@ -43,7 +43,7 @@ import { readEval, readMetrics } from "./src/metrics";
 import { acceptanceBase, acceptanceSuiteRevision, deliveryRevision, ensureAcceptanceWorktree, ensureWorkspaceCheckout, ensureWorktree, gitDirs, gitText, isLinkedWorktree, migrateWorktreeToClone, nestedRepos, pushBranch, refreshAcceptanceWorktree, repoOfPath, withBaselineCheckout, type WorkspaceRepo } from "./src/worktree";
 import { assessRun, hasSuite, runSuite, selectScenarioScope, type ScenarioResult, type SuiteRun } from "./src/acceptance";
 import { LETTERS, answerSummary, parseTextQuestion, providerQuestion, textAnswer } from "./src/questions";
-import { SECRET_NAME, secretLines, type SecretInfo } from "./src/secrets";
+import { SECRET_NAME, secretLines, type SecretInfo } from "./src/project-secrets";
 import { SLICE_LIMIT, allowedTargets, appendTransition, historyProblem, readTransitions, setField, sliceDecision, type Transition } from "./src/lifecycle";
 import { inputLines, inputParts, inputsNamedIn, listInputs, removeInput, saveInput, type InputFile, type InputPart } from "./src/inputs";
 import {

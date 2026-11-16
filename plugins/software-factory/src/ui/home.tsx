@@ -21,7 +21,7 @@ import {
 import { Dot, EmptyState, ErrorText, Field, Pill, ProgressBar, Select, Tabs, TextArea, TextInput } from "./kit";
 import { MAX_FILE_BYTES, MaterialsPicker, uploadMaterials, usePasteFiles } from "./materials";
 import { HomeQuestions, useQuestions } from "./questions";
-import { SecretsDialog } from "./secrets";
+import { SecretsDialog } from "./secrets-dialog";
 
 type Filter = "active" | "done" | "archived";
 const ALL = "__all__";

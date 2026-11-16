@@ -39,7 +39,7 @@ import {
 } from "./inspector";
 import { Chip, Dot, EmptyState, ErrorText, Pill, Segmented, SplitBar, Stat, Tabs, TextArea } from "./kit";
 import { MaterialsSection } from "./materials";
-import { SecretsDialog, useProjectSecrets } from "./secrets";
+import { SecretsDialog, useProjectSecrets } from "./secrets-dialog";
 import { AcceptanceTab } from "./acceptance";
 import { AirdMetricsSection } from "./metrics";
 import { QuestionsInbox, useQuestions } from "./questions";
