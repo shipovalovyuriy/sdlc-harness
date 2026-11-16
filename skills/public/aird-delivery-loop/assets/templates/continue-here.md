@@ -13,6 +13,7 @@ last_updated: ''
 - Active workorder:
 - Current wave (done / in progress / remaining):
 - Current gate:
+- Blind acceptance (branch / worktree path / suite commit and immutable pre-flight base commit per wave / running author thread if any / red-first verdict / last run; `n/a` without scenario rows):
 - Root slices since handoff / measured context % (SKILL Context Budget rule 7):
 - Delivery brief (inline or path — the next worker continues from this, not from re-reading the package):
 - Hard-stop reason (`none` for a routine checkpoint):

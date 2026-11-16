@@ -45,7 +45,7 @@ question is next. It is a decision tree, not a form: never dump a batch or
 expose the unused candidate inventory. An answer may remove irrelevant branches,
 but it must not erase a separate material business decision.
 
-**Non-interactive exception.** When the session is non-interactive (`codex exec` / no user present), apply repository-backed or simple reversible defaults and mark consequential ones `defaulted` (never fabricate a `User Decision`). Mark only high-risk or irreversible choices that cannot be defaulted safely as `unconfirmed`, and stop before delivery only for those blockers. Do not materialize a full question inventory merely because no user is present.
+**Non-interactive exception.** When the session is non-interactive (`codex exec` / no user present), apply repository-backed or simple reversible defaults and mark consequential ones `defaulted` (never fabricate a `User Decision`). Mark only high-risk or irreversible choices that cannot be defaulted safely as `unconfirmed`, and checkpoint and stop before the dependent TRD/design or delivery step for those blockers. Do not materialize a full question inventory merely because no user is present.
 
 ## Question format (mandatory — closed, never open-ended)
 

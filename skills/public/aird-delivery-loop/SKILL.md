@@ -11,7 +11,8 @@ Run this as the main-session orchestration skill. The main session validates the
 review manifest, reads only the earliest accepted wave and its named source
 sections, builds a compact delivery brief, and executes **one bounded execution
 slice at a time**. A slice is one workorder, at most two disjoint workorders
-that share one integration boundary, or one finding-group fix/closure cycle.
+that share one integration boundary, one finding-group fix cycle, or one
+restricted closure (never fix and closure in the same slice).
 After checkpointing a slice, the main session may continue automatically with
 the next dependency-compatible slice while the hard context-stop conditions
 below remain false. The wave is the acceptance/dependency unit; it is not
@@ -50,7 +51,10 @@ open. Set `verifying` when required runtime/browser/release checks start, which
 requires `ready_for_runtime_verification: ready|not_required`. Set
 `ready_for_release` once every required gate has passed with evidence, then
 `complete`. Going straight from `in_delivery` to `complete` destroys a resumed
-session's ability to tell finished code from finished evidence.
+session's ability to tell finished code from finished evidence. Each step is
+appended to `STATE.md` `transitions` (`from`, `to`, `at`), which the validator
+checks for gaps; under Software Factory the `sf_transition` tool checks the
+step's evidence and writes both — do not edit `status` by hand there.
 
 Do not begin delivery without an implementation-ready wave. The minimum to
 start is `STATE.md`, `REVIEW-MANIFEST.json`, V4 workorders for one accepted
@@ -142,8 +146,10 @@ These are blocking rules, not preferences. Violating them is what turns a delive
    the next compact brief from disk, and continue with the next lean-routed executor when the
    next dependency is ready. **Measure, never estimate:** at every checkpoint
    read the context fill from Codex's context indicator (it shows context
-   left; record the used percentage) and write the percentage next to the
-   slice count in `.continue-here.md`. At 60% or more the next substantive
+   left; record the used percentage) and write the percentage alongside the authoritative `root_slices_since_handoff` counter in `STATE.md`;
+   mirror both in `.continue-here.md`. Reset that counter only at a fresh-root
+   handoff (including discovery-to-delivery), never at a new turn in the same
+   context. At 60% or more the next substantive
    slice goes to a worker (Independence Rules); at 70% or more, or after six
    slices since the last handoff, the handoff is mandatory even when delivery
    is smooth: write `checkpoint_kind: proactive_handoff` and end the root task.
@@ -186,6 +192,10 @@ work, restricted closure, or verification gate):
 2. update `STATE.md` with the eight-line slice template and update
    `.continue-here.md` with paths, exact next action, and the measured context
    percentage (Context Budget rule 7);
+   set the slice's workorder frontmatter `status` (`in_progress` when the
+   slice starts, `done` when its author checks pass) — the validator requires
+   `done` before release, and a status change does not invalidate the
+   accepted hash;
    set `checkpoint_kind: routine` without changing delivery status unless a
    hard stop, blocker, or user decision actually pauses delivery;
 3. run the validator once when AIRD artifacts changed;
@@ -201,8 +211,9 @@ compatibility, security), a DoD line, or a risk-register mitigation — record i
 in the same slice as a `STATE.md` frontmatter blocker (`needs_user_decision:
 true` unless the accepted package already decides the fix) naming what it
 blocks, and ask the user at this checkpoint with the options and a recommended
-default. Independent slices continue meanwhile; no slice whose write scope the
-answer could change starts before it. Only a residual whose check the accepted
+default. A required user decision is a hard stop under the delivery contract:
+checkpoint and end this root task unless the user answers at this checkpoint.
+No further slice starts while that blocker is pending. Only a residual whose check the accepted
 gates themselves defer to release — a stand credential, a production copy, an
 observation window mapped in `08-quality-gates.md` — may stay a release note.
 The failure this prevents: a rollback defect found in the first slice, parked
@@ -257,6 +268,7 @@ runnable ownership slice over mechanical one-file fragmentation.
 - If an impact-radius omission is discovered only after a worker ran, do not spawn another agent merely to compensate. Record a fix workorder and repair the scoped test/fixture closure locally when deterministic; return to discovery when the missing scope changes the accepted product or architecture contract.
 - Pass only the workorder path, the named AIRD doc paths, and standards refs; never pass the parent transcript. Spawn it with `fork_turns: "none"` (`fork_turns`, not `fork_context`, is the supported spawn field).
 - Do not send follow-up work to a worker whose context is already large (about 300K+ tokens) for a fix of a few dozen lines: start a fresh narrow worker with the finding path, or fix it in the orchestrator when the fix is mechanical and the orchestrator is below 60%.
+- The `test-author` of the Blind Acceptance Protocol is a verification spawn at wave pre-flight, outside the two implementation-worker justifications. It shares no worktree, brief, or transcript with any implementer, and returns the same six fixed fields as any verifier (suite commit in `paths`, red-first counts through `numbers`).
 - Keep write sets disjoint. If two workorders need the same file, sequence them or create an integration workorder.
 - A worker must not choose architecture. If the brief is insufficient, the worker STOPs and reports a blocker; the main session routes it back to `architect`/discovery.
 - Workers report changed files, tests run, contract deviations, and blockers.
@@ -335,6 +347,11 @@ not a prerequisite workorder in the implementation dependency chain.
 Set `STATE.md` to `in_delivery`, set `active_wave`, and write the one-page
 delivery brief. Do not regroup or semantically re-review the accepted wave.
 
+At this pre-flight, apply the Blind Acceptance Protocol below before the
+wave first slice. Restore its per-wave state from `.continue-here.md`; wait for
+the author result before handoff, or record the running thread and wait on
+resume instead of spawning a duplicate.
+
 ### 2. Route Implementation Execution
 
 Apply the spawn gate (Independence Rules) before role routing; the orchestrator implements a sole ready slice itself. For a slice eligible under either justification, route by frontmatter `surface`: `backend-worker` for backend/data/infra runtime work, `frontend-worker` for frontend, and `worker` for mixed/tooling/docs. Use `debugger` for a required bug-isolation pass and `cybersec` for an explicitly required security review; those specialist gates do not turn a sequential implementation workorder into a worker spawn. Do not route by keyword matches in the body.
@@ -403,7 +420,9 @@ Closure is deliberately asymmetric between the loops: discovery closes its
 own findings without a reviewer because their criteria are deterministic
 (validator output, a named command), while a code fix is judged by a fresh
 restricted closure reviewer because its correctness is not. Do not import the
-discovery rule here.
+discovery rule here. The explicit exception is a blind-acceptance finding:
+its deterministic closure is the suite re-run described in that protocol.
+A restricted acceptance dispute ruling is neither a broad review nor closure.
 
 If a reviewer finds blocking issues, assign monotonic finding IDs and batch
 all findings from that pass into the smallest coherent fix cycle(s) by
@@ -426,6 +445,7 @@ failing lines, and log paths enter the conversation.
 Required gates:
 
 - project tests/lint/typecheck/build named in `08-quality-gates.md`;
+- blind acceptance (protocol below) when `09-dod.md` has `Acceptance Scenarios` rows — after the project commands above and before the reviewer and QA are spent;
 - one broad `reviewer` with `$code-review-standards` loaded for waves that
   change code, configuration, schemas, or runtime behavior; a docs-only wave
   uses the mapped docs/link/render review instead;
@@ -452,6 +472,77 @@ run UI Verification when a completed frontend/mixed workorder selects the
 verification contract for such a workorder but do not route a backend-only
 wave into browser verification. Use `cybersec` for named security risks and
 `docs` when a mapped gate requires documentation.
+
+### Blind Acceptance Protocol (mandatory when `09-dod.md` has `Acceptance Scenarios` rows)
+
+The acceptance suite is written by an author who never sees the implementation,
+and the implementer — the orchestrator included — never sees the suite. The
+scenarios are the accepted contract; the suite is only their executable form.
+A scenario belongs first to the earliest wave whose workorders reference any
+of its `DoD` ids through `dod_ids`; later waves keep it as a regression check.
+A wave's new rows are those it first owns; its gate covers those plus all
+earlier waves' rows. Future-wave rows do not block it.
+
+1. **Start at wave pre-flight, before the wave's first slice.** Spawn one
+   `test-author` — a verification spawn that needs no implementation-worker
+   justification. It works in one acceptance worktree per package, outside the
+   repository root, on `aird/<slug>-acceptance`: cut from the delivery base for
+   the first wave; for a later wave, merge the delivery head at this pre-flight
+   into it first. That tree is the wave's base — the pre-change code and none
+   of the wave's diffs; a test author started after the wave's first slice is
+   not blind. Its brief is the wave's scenario rows, the contract and UI-spec
+   sections they name, and the service start commands from the `Baseline Runs`
+   table of `08-quality-gates.md`. Never pass a workorder's Task Breakdown,
+   implementation notes, evidence, or a diff. Record branch, worktree path,
+   immutable pre-flight base commit, suite commit, and red-first verdict in `.continue-here.md`; a resumed
+   session that finds a suite commit for the wave does not respawn.
+2. **Suite contract.** Tests live in `acceptance/<slug>/` of that worktree,
+   drive only public boundaries, one test per `AS-NN`.
+   `acceptance/<slug>/run.sh <absolute target-dir>` resolves its own paths from
+   its directory, runs the suite against the checkout at the target, and writes
+   `results.json` next to itself —
+   `[{"id":"AS-03","status":"passed|failed|skipped","expected":"…","actual":"…"}]`
+   — exiting non-zero when anything failed or was skipped.
+3. **Red first.** The test author runs the suite against its own tree (the
+   wave's base) and reports the counts: every new-behaviour row of the wave
+   must be `failed` there, and earlier waves' rows `passed`. `skipped` is not
+   red. A row that passes on base measures nothing: the test author fixes it,
+   or keeps it and adds `"note": "pre-existing: <reason>"` to its result.
+   Without the runtime the base needs, red-first is `blocked-no-evidence`:
+   implementation proceeds, and red-first must run before step 5.
+4. **Firewall.** Do not open any file under the acceptance worktree except
+   `results.json` — and from it only `id`, `status`, `expected`, `actual`.
+   The runner also checks `note: "pre-existing: <reason>"` for baseline passes.
+   Do not ask for test code, fixtures, or stack traces. Implementer tests are
+   author checks; they never close this gate.
+5. **Run after integration**: after the project tests/lint/typecheck/build and
+   before any reviewer or QA spawn; browser-driven scenarios of a wave with
+   backend runtime profiles run after Backend Runtime Verification. When an
+   `sf_run_acceptance` tool is available use it; otherwise run
+   `<acceptance worktree>/acceptance/<slug>/run.sh <delivery checkout root>`
+   with output redirected to evidence. Copy `results.json` to
+   `evidence/acceptance-<wave>.json`. The gate is `pass` only when every row of
+   this and earlier waves is `passed`; `skipped`, or a row missing from
+   `results.json`, is `blocked-no-evidence`. Re-run after the wave's last fix
+   cycle: the gate's evidence is the run on the final tree. The suite must be
+   committed before running; changing it invalidates prior red-first evidence,
+   so repeat red-first on the recorded base before judging the new suite.
+6. **A failed scenario is a code defect by default.** Register the finding and
+   fix it from «scenario, expected, actual» alone. It closes on the suite
+   re-run, not on a restricted closure reviewer — its hunks are covered by the
+   wave's broad review — and each re-run counts as a revision attempt. You may
+   contest a failure only by citing package text the test contradicts. Then
+   one restricted `reviewer` call per acceptance run reads all contested
+   scenarios, the cited text, their tests, and only their hunks, and rules for
+   each: code (fix it); test (a fresh `test-author` gets the scenario and the
+   ruling; `class: test-coverage`, `root_cause: code`); or contract (a question
+   to the user — the one case where `root_cause: workorder` or `intent`
+   changes routing). This call is neither the broad pass nor a closure. Never
+   edit a test or a scenario to make a run pass; only such a ruling changes
+   either.
+7. **Do not merge the acceptance branch.** It is outside every workorder's
+   write scope. Name it in the final response: merging `acceptance/<slug>/` as
+   the feature's regression tests is the user's decision.
 
 ### Backend Runtime Verification Protocol (mandatory for backend changes)
 
@@ -529,9 +620,10 @@ For each verification finding:
    immutable `workorders/` and do not invalidate accepted hashes.
 3. Choose the smallest executor per Independence Rules: the orchestrator fixes the coherent finding group locally, mechanical or not; a production-behavior change or specialist judgment raises review depth, it does not justify a worker.
 4. Re-run only impacted author tests after each fix. Do not spawn reviewer/QA
-   while sibling fixes from the same finding group remain open. After the
+   while sibling fixes from the same finding group remain open, except for
+   the restricted dispute ruling in the Blind Acceptance Protocol. After the
    whole finding group is author-complete, run one restricted closure pass on
-   the open IDs and fix-caused hunks, plus only the smallest required runtime
+   the open IDs (blind-acceptance findings instead close on their suite re-run) and fix-caused hunks, plus only the smallest required runtime
    gates for that group.
 5. Repeat until no blocking findings remain, max 3 revision attempts per finding group.
 6. Escalate to the user if the blocking count does not decrease between attempts or the third attempt still has blockers.
@@ -541,9 +633,9 @@ closure review, not both. Checkpoint after author fixes. The same root task may
 then run the closure as the next slice with a fresh reviewer when no hard-stop
 condition is true.
 
-Bound the whole loop: at most 3 full verification cycles per delivery run. New blocking findings on cycle 3+ go straight to escalation with the remaining blockers and a recommended next step.
+Bound the whole loop: at most 3 full verification cycles per wave. New blocking findings on cycle 3+ go straight to escalation with the remaining blockers and a recommended next step.
 
-Do not mark delivery complete while reviewer, QA, browser, or usability gates have blocking findings.
+Do not mark delivery complete while blind-acceptance, reviewer, QA, browser, or usability gates have blocking findings.
 
 On every context checkpoint, write `.continue-here.md` from
 `assets/templates/continue-here.md` with
@@ -560,6 +652,7 @@ Delivery is complete only when:
   verification are satisfied through mapped gates rather than artificial
   implementation dependencies;
 - tests and quality gates pass, each with evidence attached (fail-closed — no vacuous passes);
+- when `09-dod.md` has `Acceptance Scenarios` rows: the last blind-acceptance run, made after the final fix cycle, shows every row of every delivered wave `passed`, with `results.json` copied to `evidence/acceptance-<wave>.json`;
 - the mapped broad reviewer or docs-review gate has no blocking findings;
 - QA accepts the DoD against concrete evidence when a behavioral QA gate
   applies;
@@ -646,7 +739,7 @@ the response proportionate to the delivery, while still making the result
 understandable without reading raw logs.
 
 A terminal final response ends with the «Улучшение процесса» block required by
-`references/process-metrics.md`: the few metrics most worth attention with
+the discovery skill's `references/process-metrics.md`: the few metrics most worth attention with
 their comparison against previous AIRD runs, fired signals, and the generated
 proposals that need a user decision — or an explicit «системных отклонений
 нет».

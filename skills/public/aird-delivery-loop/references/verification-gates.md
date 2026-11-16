@@ -10,6 +10,8 @@ delivery skill's Review Scheduling Policy: reviewer and QA run once after an
 integrated wave, while each slice implementer runs targeted tests after its own work. Never
 run a per-workorder reviewer. Stronger project gates may add test, runtime,
 security, or QA depth at the wave boundary, but do not change review cadence.
+Blind-acceptance authors run at wave pre-flight; restricted dispute rulings
+follow that protocol and are not a broad reviewer/QA pass.
 
 | Change type | Required gates |
 |---|---|

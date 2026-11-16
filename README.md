@@ -195,8 +195,11 @@ runtimes because it evaluates multiple harnesses, including Codex and Claude.
 │   ├── CONFIG.md
 │   └── SECURITY.md
 ├── evals/                       # portable AIRD regression scenarios
+├── plugins/
+│   └── software-factory/        # bb plugin: AIRD loops as a panel (see below)
 ├── scripts/
-│   ├── install.sh               # install both runtimes (or --codex / --claude)
+│   ├── install.sh               # install both runtimes (or --codex / --claude), --bb-plugin
+│   ├── install-bb-plugin.sh     # install the Software Factory plugin into bb
 │   ├── install-codex.sh
 │   └── install-claude.sh
 └── skills/
@@ -212,6 +215,7 @@ cd sdlc-harness
 ./scripts/install.sh            # both runtimes
 ./scripts/install.sh --codex    # Codex only  -> ~/.codex
 ./scripts/install.sh --claude   # Claude Code only -> ~/.claude
+./scripts/install.sh --all --bb-plugin   # both runtimes + Software Factory for bb
 ```
 
 The Codex install copies skills and TOML agents as-is. The Claude install
@@ -237,6 +241,29 @@ $aird-delivery-loop    # Codex
 /aird-delivery-loop    # Claude Code
 ```
 
+## Software Factory (bb plugin)
+
+`plugins/software-factory` runs the AIRD loops from a panel in
+[bb](https://getbb.app): projects and their AIRD packages, stage graphs,
+workorders, gates, blind acceptance, agent questions, and every skill role as
+its own thread. Factory owns what the agents should not improvise: one working
+copy per AIRD (an own clone, so a sandboxed agent can commit), a layout check
+before any thread starts, stage transitions (`sf_transition`), the session
+budget and handoff (`sf_slice_begin`, `sf_handoff`), and the blind acceptance
+suite the test author registers (`sf_register_suite`) and Factory runs.
+
+It uses the harness skills and roles, so install them first:
+
+```bash
+./scripts/install.sh --all --bb-plugin
+# or, plugin only, from any directory:
+bb plugin install "git:https://github.com/shipovalovyuriy/sdlc-harness.git@^0.1.0" \
+  --subdirectory plugins/software-factory --tag-prefix software-factory/
+```
+
+Releases are tagged `software-factory/vX.Y.Z`; bb builds the plugin on install
+and updates it within the range. Details: [plugins/software-factory/README.md](plugins/software-factory/README.md).
+
 ## Security
 
 The bundle is portable by design: no auth files, API keys, provider
@@ -247,7 +274,9 @@ credentials, logs, or project secrets. See [docs/SECURITY.md](docs/SECURITY.md).
 ```bash
 node --test skills/public/aird-delivery-loop/assets/scripts/aird-validate.test.mjs
 python3 -m unittest discover -s skills/skill-doctor/scripts -p 'test_*.py'
-bash -n scripts/install.sh scripts/install-codex.sh scripts/install-claude.sh
+bash -n scripts/install.sh scripts/install-codex.sh scripts/install-claude.sh scripts/install-bb-plugin.sh
+(cd plugins/software-factory && npm ci && npx tsc --noEmit -p . \
+  && node --import ./tests/resolve-typescript.mjs --test tests/*.test.ts && bb plugin build .)
 ```
 
 The installed Claude copy runs the same validator regression suite after

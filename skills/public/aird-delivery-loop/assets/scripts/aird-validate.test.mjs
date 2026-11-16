@@ -1367,6 +1367,25 @@ wave_outcomes:
     assertResult('an accepted wave that loses its baseline evidence fails', run(packageDir), 1, 'has no baseline evidence on disk');
   }
 
+  // Acceptance supplements existing gates; it cannot satisfy ordinary coverage alone.
+  {
+    const { packageDir } = makeRepository('blind-not-ordinary-coverage', [{ id: 'WO-01', gateIds: ['G-01'], dodIds: ['DOD-01'] }]);
+    writeFileSync(join(packageDir, '01-prd.md'), `${baselineContent['01-prd.md']}\nEC-01: duplicate request\n`);
+    writeFileSync(join(packageDir, '09-dod.md'), `${baselineContent['09-dod.md']}\nDOD-01\nLiteral values: ORDER-1001 ERR-409 ORG-7 CONFIG-2.\n`);
+    const gates = (ordinary) => `# Gates\nG-01 unit tests\nG-02 Blind acceptance\n### Gate -> DoD Mapping\n| Gate | DoD |\n|---|---|\n| ${ordinary ? 'G-01' : 'G-02'} | DOD-01 |\n### Edge Case -> Gate Mapping\n| Edge case | Gate |\n|---|---|\n| EC-01 | ${ordinary ? 'G-01' : 'G-02'} |\n`;
+    writeFileSync(join(packageDir, '08-quality-gates.md'), gates(false));
+    const blindOnly = run(packageDir);
+    assertResult('blind acceptance alone does not cover DoD', blindOnly, 0, 'DOD-01 is not covered');
+    assertResult('blind acceptance alone does not cover edge cases', blindOnly, 0, 'EC-01 is declared');
+    assert(![...blindOnly.parsed.errors, ...blindOnly.parsed.warnings].some((m) => /unknown (risk|gate).*?(1001|409|7|2)/u.test(m)), 'literal identifiers were misread as risk/gate references');
+    writeFileSync(join(packageDir, '08-quality-gates.md'), gates(true));
+    const covered = run(packageDir);
+    assertResult('ordinary gates retain coverage alongside blind acceptance', covered, 0);
+    assert(![...covered.parsed.errors, ...covered.parsed.warnings].some((m) => m.includes('DOD-01 is not covered') || m.includes('EC-01 is declared')), 'ordinary coverage was lost');
+    writeFileSync(join(packageDir, 'workorders', 'WO-01.md'), workorderText({ id: 'WO-01', gateIds: ['G-02'], dodIds: ['DOD-01'] }));
+    assertResult('independent acceptance is not a workorder gate', run(packageDir), 0, 'must not appear in workorder gate_ids');
+  }
+
   console.log(`aird-validate tests: PASS (${cases} cases)`);
 } finally {
   rmSync(root, { recursive: true, force: true });

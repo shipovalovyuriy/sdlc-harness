@@ -45,19 +45,7 @@ Optional codebase map:
 
 ## 00-discussion-log.md
 
-- Discussion status:
-- Questions asked:
-- Options considered:
-- Risk-driven questions and mitigations:
-- Architectural decisions (placement, data, contracts, failure, security, rollout, tradeoffs):
-- Decisions locked:
-- Risk mitigations locked:
-- Rationale:
-- Alternatives rejected:
-- Deferred ideas:
-- Must not constraints:
-- Remaining open questions:
-- Assumptions still unconfirmed:
+Use `assets/templates/discussion-log.md` as the authoritative structure.
 
 ## 01-prd.md
 
@@ -96,31 +84,11 @@ each one onto a gate whose selector actually picks the check that guards it.
 
 ## 02-ui-spec.md
 
-- Surface:
-- Primary user task:
-- Layout intent:
-- Information hierarchy:
-- Components and controls:
-- Interaction states:
-- Empty/loading/error/success states:
-- Responsive behavior:
-- Accessibility expectations:
-- Visual constraints:
-- Browser/usability verification notes:
-- Prototype: one-pass sketch + user verdict (no QA at discovery):
+Use `assets/templates/ui-spec.md` as the authoritative structure.
 
 ## 02-ui-prototype.md
 
-- Prototype status:
-- Prototype path or URL:
-- Mock data:
-- States covered:
-- Business questions tested:
-- UX questions tested:
-- User feedback:
-- Accepted direction:
-- Changes required before delivery:
-- Delivery handoff notes:
+Use `assets/templates/ui-prototype.md` as the authoritative structure.
 
 ## 03-risk-register.md
 
@@ -287,3 +255,12 @@ slice: take it to the user as one question and record
 - Docs:
 - Release:
 - Ready-for-delivery evidence:
+
+### Acceptance Scenarios
+
+Literal expected results at public boundaries, fixed before any code. Delivery's
+blind acceptance suite is written from these rows by an author who never sees
+the implementation. `Approved` is `user` (explicit answer) or `agent`.
+
+| ID | DoD | Boundary | Given | When | Then (expected) | Approved |
+|---|---|---|---|---|---|---|

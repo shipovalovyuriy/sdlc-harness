@@ -30,7 +30,11 @@ when the workorder requires them. Required checks may not be replaced with
 mocks, skipped, or downgraded. A test covers your change only if it ran and an
 assertion observes the changed output, branch, or contract; a snapshot-only,
 no-throw, mock-call, or mocked-integration check does not count, and the
-reviewer will not count it either. Redirect raw command output to the evidence
+reviewer will not count it either. Your own tests are author checks.
+When your AIRD sections include the `Acceptance Scenarios` rows of `09-dod.md`,
+an independent acceptance suite you cannot see judges the result against
+them: implement their expected results exactly, and do not look for, open, or
+ask about acceptance tests. Redirect raw command output to the evidence
 directory. Every chat-visible command result must end in a count or `tail -N`;
 never return raw test, typecheck, build, recursive-search, or migration output.
 

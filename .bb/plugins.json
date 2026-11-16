@@ -1,0 +1,8 @@
+{
+  "$schema": "https://getbb.app/schemas/plugins.schema.json",
+  "schemaVersion": 1,
+  "name": "sdlc-harness",
+  "plugins": [
+    { "name": "software-factory", "source": "./plugins/software-factory" }
+  ]
+}

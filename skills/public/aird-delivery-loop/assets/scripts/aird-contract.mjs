@@ -242,8 +242,8 @@ export function parseGateDodMapping(gatesText) {
   const mapping = new Map();
   for (const line of body.split(/\r?\n/)) {
     if (!line.trim().startsWith('|')) continue;
-    const gateIds = collectIds(line, /G-\d+/g);
-    const dodIds = collectIds(line, /DOD-\d+/g);
+    const gateIds = collectIds(line, /(?<![A-Za-z0-9])G-\d+/g);
+    const dodIds = collectIds(line, /(?<![A-Za-z0-9])DOD-\d+/g);
     if (!gateIds.length || !dodIds.length) continue;
     for (const gateId of gateIds) {
       mapping.set(gateId, [...new Set([...(mapping.get(gateId) ?? []), ...dodIds])]);
@@ -283,7 +283,7 @@ export function parseBaselineRuns(gatesText) {
       const index = columns.findIndex((column) => column.startsWith(name));
       return index >= 0 ? (cells[index] ?? '').replace(/`/g, '').trim() : '';
     };
-    for (const gateId of collectIds(cell('gate'), /G-\d+/g)) {
+    for (const gateId of collectIds(cell('gate'), /(?<![A-Za-z0-9])G-\d+/g)) {
       rows.set(gateId, { services: cell('services'), base: cell('base'), evidence: cell('evidence') });
     }
   }

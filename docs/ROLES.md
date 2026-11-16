@@ -40,6 +40,7 @@ compact verdicts — never transcripts.
 | Role | Purpose |
 |---|---|
 | `reviewer` | Code review focused on correctness, regressions, missing tests, and maintainability risk. Loads `code-review-standards`. One broad pass per integrated wave; restricted closure passes for finding groups. |
+| `test-author` | Writes the blind acceptance suite for a delivery wave from the accepted `Acceptance Scenarios` and public contracts only, in a separate acceptance checkout, never reading the implementation. Proves red-first on the pre-change base; the implementer sees scenario verdicts, not test code. |
 | `qa` | Validates behavioral acceptance criteria, edge cases, negative paths, and integration behavior — including browser verification of user-facing states with per-state screenshot evidence. |
 | `cybersec` | Threat-models and reviews security-sensitive changes: auth, permissions, secrets, PII, callbacks, multi-tenant boundaries. |
 | `docs` | Writes and refines concise technical documentation and maintains existing plans; used for mapped documentation gates. |

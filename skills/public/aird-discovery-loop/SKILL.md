@@ -40,7 +40,11 @@ Artifact filenames use a phase prefix, and some phases produce more than one fil
 **Order matters more than completeness.** Documents are produced in risk order,
 not in filename order. While an existential assumption is unproven (phase 3.5),
 the only legitimate artifacts are `00-*`, `codemap.md`, `03-risk-register.md`,
-and the single spike workorder that tests it. A package that reaches an
+and the single spike workorder that tests it. For a spike-only delivery wave,
+minimal stubs of the existing validator-required `01-prd.md`, `04-trd.md`,
+`07-implementation-plan.md`, `08-quality-gates.md`, and `09-dod.md` are allowed: they
+name only the unproven risk, probe, W1 outcome, gates and DoD of that spike;
+they contain no feature design. A package that reaches an
 11-workorder plan before its load-bearing external contract has been called once
 is not "thorough" — it is a half-day that delivery will have to throw away.
 
@@ -115,7 +119,7 @@ prints `waveDigest`.
 
 In a git repository, first identify the target base ref (normally the repository's remote-tracking default branch), fetch it when it is remote-tracking, then create or switch to `aird/<feature-slug>`. Record the target ref through the generated review manifest when a wave is accepted. Branch naming may activate local AIRD guard hooks, but hooks never replace the deterministic base check. During discovery all writes stay inside the package dir.
 
-Create or update `00-intake.md` and initialize `STATE.md` from `assets/templates/state.md`. Two frontmatter fields are chosen here and nowhere else — `aird-validate.mjs` hard-errors without them:
+Create or update `00-intake.md` and initialize `STATE.md` from `assets/templates/state.md`. Two frontmatter fields are chosen here and nowhere else. Set both explicitly; the validator requires `discovery_profile` once a V4 workorder exists and otherwise applies legacy defaults:
 
 - `discovery_profile`: `lite` (localized reversible change, ≤5 implementation workorders), `standard` (cross-layer or single-service contract, ≤12), or `deep` (security, infrastructure, migrations, multi-service/API/data, high-impact rollout; ≤25; one accepted wave may hold the whole budget). Risk and irreversibility override change size — see `references/delivery-contract.md`.
 - `package_class`: `product` or `supporting`.
@@ -127,7 +131,8 @@ Then record:
 - business/product outcome;
 - constraints, non-goals, and open questions;
 - repo, service, or surface boundaries if known;
-- initial success criteria.
+- initial success criteria;
+- user-supplied materials: files in the package's `inputs/` (screenshots, mockups, documents) are part of the request — open each and record, by path, what it shows or requires.
 
 At intake, collect open questions into `00-intake.md`/`00-discussion-log.md` but do not ask them yet, unless a missing answer would make even reconnaissance unsafe or meaningless. Surface them one at a time at the phase-2 discussion gate via the interview protocol (`references/interview.md`) — only those that would change product scope, UX flow, API shape, data model, rollout risk, or quality gates.
 
@@ -258,7 +263,7 @@ drafting the UI spec or prototype, map and cite:
   patterns;
 - the closest implemented pages/components for the requested workflow;
 - approved design sources supplied by the user (for example Figma nodes or
-  screenshots), when available;
+  screenshots, including the package's `inputs/`), when available;
 - the cheapest existing prototype host: local mock route, Storybook,
   playground, or the application itself.
 
@@ -370,6 +375,8 @@ happened — exactly as a check that cannot fail is not a check.
 
 - no `04-trd.md`, `05-api-contracts.md`, `06-data-models.md`,
   `07-implementation-plan.md`, or UI block beyond what the probe itself needs;
+  the minimal spike-only stubs listed in Artifact Set And Scaling are the
+  exception needed to validate and accept that spike wave;
 - at most **one** executable workorder in the package — the spike that runs the
   probe — and it owns wave `W1` alone;
 - `status: ready_for_delivery` only for that spike-only wave;
@@ -534,7 +541,7 @@ heading the validator reads) with one row per property:
 "Who relies on it" covers the previous build during rollback, old clients,
 rules and aggregates — not only code the package will edit. Every decision row
 lands in a workorder; every workorder that reads such an entity puts a
-new-form fixture in its acceptance tests and the touched tests in
+new-form fixture in its own tests and the touched tests in
 `impact_radius` — a fixture of the old form alone proves nothing about the new
 path. A package that adds no new creation path writes `None.` with the reason.
 The validator warns — fatal under the `--strict` run discovery must use — when
@@ -562,6 +569,57 @@ A mock server behind a UI gate is a double too: it reproduces the contract's
 refusals (400/403/404 on input the target rejects) instead of answering any id,
 and at least one scenario follows a link with input its target refuses (eval
 `mock-mirrors-refusals`).
+
+#### Acceptance scenarios: the oracle is written before the code
+
+Code that satisfies its author's own tests proves agreement with the author,
+not with the task. So the expected results are fixed here, before any code, and
+`$aird-delivery-loop` checks them with a suite the implementer never sees.
+`09-dod.md` carries the table — it is not a new document:
+
+```markdown
+### Acceptance Scenarios
+
+| ID | DoD | Boundary | Given | When | Then (expected) | Approved |
+|---|---|---|---|---|---|---|
+| AS-01 | DOD-02 | `POST /api/v1/period-close` | июнь открыт, все 16 шагов закрыты | финдиректор закрывает месяц | 200, `status: "closed"`, строка в `period_close_audit` с его id | user |
+```
+
+- `Then` is a literal observable result at a public boundary: status and body
+  field, exit code and output, visible text on a named screen, a row in a named
+  table. «Работает корректно» is not a scenario.
+- `Boundary` names the public surface from `05-api-contracts.md` or
+  `02-ui-spec.md` — or, when the package has neither, the command, job, or
+  table named in `04-trd.md`/`06-data-models.md` — precisely enough to write
+  the test without reading the implementation. A scenario that can only be
+  checked through an internal symbol means the contract is underspecified —
+  fix the contract.
+- Every DoD item of the target wave whose result is observable at a public
+  boundary has at least one row; an item with none (docs, release, an internal
+  refactor, a spike-only wave's probe) says why in its own DoD line. Each negative and `EC-NN` edge case
+  that changes behaviour gets its own row.
+- `Approved` is `user` or `agent`. Rows for the wave's main path and for
+  irreversible, financial, or data-destroying behaviour go to the user at the
+  end of this phase as interview questions in the normal format: the
+  consequence in plain Russian, then the literal `Then` cell verbatim — the
+  answer approves the literal. They become `user` only on an explicit answer.
+  With no user available, a reversible row stays `agent` and is recorded
+  `defaulted`; an irreversible one is an `unconfirmed` blocker, as in the
+  interview protocol. All `agent` rows are listed by ID in
+  `DISCOVERY-SUMMARY.md`.
+- The suite's files are never part of a workorder: no `acceptance/` path in
+  `allowed_write_paths` or `impact_radius`. The scenario rows are: every
+  workorder whose `dod_ids` have rows lists `09-dod.md#Acceptance Scenarios` in
+  `docs_to_read`. The implementer's own tests stay in its write scope; they
+  are author checks, not this gate.
+- `08-quality-gates.md` gets one gate, `Blind acceptance`, with its own `G-NN`
+  row in the gates table and in `Gate -> DoD Mapping` for the DoD items that
+  have rows. It has no command at discovery — the suite is written at delivery
+  pre-flight and its red-first run is its baseline — so the run-once and
+  `Baseline Runs` rules below do not apply to it, and it is not listed in
+  workorder `gate_ids`. It never counts toward `Gate -> DoD` or
+  `Edge Case -> Gate` coverage: every DoD item and `EC-NN` keeps at least one
+  other gate.
 
 **Run every gate command and every workorder evidence command once, at the
 moment you write it.** Both are authored here, both look precise, and neither
@@ -637,8 +695,9 @@ for supporting work.
 #### Workorder Sizing (blocking rule)
 
 Workorders are sized as coherent independently testable ownership slices, not
-as individual files or evidence chores. Delivery spawns one worker with a clean
-context per implementation workorder. Rules:
+as individual files or evidence chores. Delivery executes each workorder in one
+bounded context — the orchestrator by default, a clean worker only under the
+delivery skill's two spawn justifications. Rules:
 
 - **1–3 atomic tasks per workorder, listed in a `Task Breakdown` section.** An atomic task is one coherent edit unit — one endpoint, one component, one migration, one config surface, one test suite — roughly one commit.
 - **Fits in about half of a fresh worker context.** Count what the worker must load: the workorder itself, the named AIRD doc sections, the files it will open, and its own diff. If the honest estimate exceeds that, split.
@@ -705,7 +764,7 @@ Each workorder must be independently executable and include:
 - task breakdown (1–3 atomic tasks, per the sizing rule above);
 - a `## Consumes` table (or an explicit `None.`);
 - allowed read paths and write paths;
-- required AIRD docs to read;
+- required AIRD docs to read, including any `inputs/` file the slice must match (`docs_to_read`);
 - `$code-review-standards` references to load before coding/review (`universal.md`, `structure-reuse-performance.md`, plus stack-specific refs);
 - exact behavior delta;
 - contracts to preserve or change;
@@ -838,7 +897,9 @@ every observability signal, metric, limit, quota, and non-functional target the
 TRD states as required, plus every DoD item of the target wave, and `rg` its
 name against `workorders/` (output to `evidence/`, a count on screen). Each one
 lands in a workorder of the target wave or in an explicit deferral paragraph of
-`07-implementation-plan.md` that names the later wave. Fix the gaps before the
+`07-implementation-plan.md` that names the later wave. Count each target-wave
+`DOD-NN` inside `Acceptance Scenarios` the same way: a boundary-observable item
+with zero rows is a gap. Fix the gaps before the
 review; integrity item 4 stays in the review, which should find nothing to add.
 
 Before starting the single final combined reviewer, post a **structured review
@@ -858,7 +919,9 @@ the wave's semantics and this whole-package integrity checklist in the same
 call:
 
 1. **Reference integrity.** Every `R-`, `G-`, `DOD-`, and `WO-` ID cited in any
-   document resolves to a definition. The validator checks this; read its output
+   document resolves to a definition. The validator checks R/G/DOD references
+   in root-level Markdown; check WO references and nested documents in this
+   review. Read its output
    rather than re-deriving it.
 2. **Producer closure.** Every `## Consumes` row resolves, and every named
    versioned artifact, ontology, policy version, seed dataset, fixture realm, or
@@ -1005,6 +1068,7 @@ meets all of these conditions:
 - every workorder in that closure has its `Must Haves` sections filled (Truths, Artifacts, and Key Links where wiring matters);
 - every workorder in that closure declares `## Consumes`, and every `Produced by` resolves to a workorder it depends on, to `exists-in-repo`, or to an owned `release-binding` row;
 - the accepted wave names a `user_observable_outcome` and a PRD persona in `09-dod.md`, or `platform_slice_approved: true` records the user's decision to accept a platform slice;
+- every boundary-observable DoD item of the accepted wave has at least one `Acceptance Scenarios` row in `09-dod.md` with a literal expected result and a named public boundary; main-path, irreversible, financial and data-destroying rows are `Approved: user` (with no user available: reversible rows are `agent` and recorded `defaulted`, irreversible ones are `unconfirmed` blockers);
 - `STATE.md` declares structured `blockers:`; none is unresolved with `needs_user_decision: true`, and none blocks the accepted wave;
 - a `deep` package states non-functional targets (scale, latency/performance budget, cost) or records why they do not apply;
 - UX artifacts are `accepted` only when a workorder exists that can consume them; otherwise they stay `reviewing` so they do not go stale waiting for a blocked wave;
@@ -1058,11 +1122,17 @@ decision, not the whole package:
    the probe evidence path, and log the real contract in `00-discussion-log.md`.
 2. Take the replacement decision through the phase-2 discussion gate as a single
    question with options and a recommendation. One decision, not a re-interview.
-3. Probe the replacement through phase 3.5 **before** editing any document, with
-   the same real-path rule. A second wrong assumption costs more than the first.
+3. Probe the replacement through phase 3.5 **before** editing downstream design or workorders, with
+   the same real-path rule. A second wrong assumption costs more than the first. Once the replacement
+   is proven, move the refuted existential entry (with evidence) to the
+   discussion log, retain its R-id as a superseded risk-register row pointing
+   to the replacement, and keep only the proven replacement in active
+   `existential_risks`. Never relabel the disproven claim as proven.
 4. Compute the blast radius from the risk's `Affects` column plus
    `grep`-able references: usually a section of `04-trd.md`/`05-api-contracts.md`
-   and the workorders whose `risk_ids` include it. Edit only those.
+   and the workorders whose `risk_ids` include it, plus the `Acceptance
+   Scenarios` rows that cite the changed contract (a changed `user` row is
+   re-asked). Edit only those.
 5. Re-run the validator with `--strict`, then re-accept only the invalidated
    wave. Unchanged accepted waves keep their hashes and are not re-reviewed.
 

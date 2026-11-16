@@ -14,7 +14,10 @@ Rules:
    sibling fixes in the same finding group remain open.
 5. After the whole finding group is author-complete, run one restricted
    closure review over the open finding IDs and fix-caused hunks, followed by
-   only the required runtime gates for that group.
+   only the required runtime gates for that group. Blind-acceptance findings
+   instead close on the suite re-run (each run counts as an attempt); their
+   hunks enter the wave broad review. A dispute ruling is a separate restricted
+   call per acceptance run, not a broad review or closure.
 6. Stop as passed when no blocking findings remain.
 7. Escalate when the blocking issue count does not decrease between closure
    attempts.

@@ -25,6 +25,7 @@ import {
   inspectGitBase,
   loadReviewManifest,
   loadWorkorders,
+  parseBlockList,
   parseExistentialRisks,
   parseFrontmatter,
   parseGateDodMapping,
@@ -390,6 +391,32 @@ if (state.aird_state_version === '4.0') {
   requires('ready_for_release', ['ready'], ['ready_for_release', 'complete']);
 }
 
+// Stage history. Software Factory's sf_transition appends one entry per step;
+// when the list is present it must walk the lifecycle without gaps (paused may
+// interrupt any step after in_delivery and resumes where it stopped) and end
+// at the current status -- a hand-edited `status: complete` cannot skip stages.
+{
+  const FLOW = ['ready_for_delivery', 'in_delivery', 'implementation_complete', 'verifying', 'ready_for_release', 'complete'];
+  const transitions = parseBlockList(stateText, 'transitions');
+  let at = transitions[0]?.from ?? null;
+  let pausedFrom = null;
+  transitions.forEach((t, i) => {
+    const n = i + 1;
+    if (t.from !== at) err(`STATE.md transitions[${n}] starts at ${t.from}, but the previous step ended at ${at}`);
+    const from = FLOW.indexOf(t.from);
+    const ok = t.to === 'paused'
+      ? from >= 1 && from < FLOW.length - 1
+      : t.from === 'paused'
+        ? t.to === pausedFrom
+        : from >= 0 && FLOW.indexOf(t.to) === from + 1;
+    if (!ok) err(`STATE.md transitions[${n}] ${t.from} -> ${t.to} skips the delivery lifecycle`);
+    if (!t.at) err(`STATE.md transitions[${n}] has no \`at:\` timestamp`);
+    if (t.to === 'paused') pausedFrom = t.from;
+    at = t.to;
+  });
+  if (at !== null && at !== status) err(`STATE.md status is ${status}, but the last recorded transition ends at ${at}`);
+}
+
 function reportWorkorderIssue(workorder, message) {
   const full = `${workorder.file}: ${message}`;
   if (acceptedFiles.has(workorder.file)) err(full);
@@ -665,13 +692,14 @@ for (const workorder of workorders) {
   const riskText = read(join(packageDir, '03-risk-register.md'));
   const gatesText = read(join(packageDir, '08-quality-gates.md'));
   const dodText = read(join(packageDir, '09-dod.md'));
-  const knownRisks = new Set(collectIds(riskText, /R-\d+/g));
+  const knownRisks = new Set(collectIds(riskText, /(?<![A-Za-z0-9])R-\d+/g));
   // A gate is defined by its own row/heading, not by being cited in a mapping
   // table -- otherwise a mapping onto a gate nobody wrote would define it.
   const stripSection = (text, heading) => { const body = section(text, heading); return body ? text.replace(body, '') : text; };
   const gateDefinitionText = stripSection(stripSection(gatesText, 'Gate\\s*(?:->|→)\\s*DoD Mapping'), 'Edge Case\\s*(?:->|→)\\s*Gate Mapping');
-  const knownGates = new Set(collectIds(gateDefinitionText, /G-\d+/g));
-  const knownDod = new Set(collectIds(dodText, /DOD-\d+/g));
+  const knownGates = new Set(collectIds(gateDefinitionText, /(?<![A-Za-z0-9])G-\d+/g));
+  const blindGates = new Set(gateDefinitionText.split(/\r?\n/).filter((line) => /blind acceptance|слепая при[её]мка/iu.test(line)).flatMap((line) => collectIds(line, /(?<![A-Za-z0-9])G-\d+/g)));
+  const knownDod = new Set(collectIds(dodText, /(?<![A-Za-z0-9])DOD-\d+/g));
 
   for (const workorder of workorders) {
     if (!EXECUTABLE_KINDS.has(workorder.kind)) continue;
@@ -681,6 +709,7 @@ for (const workorder of workorders) {
     }
     for (const gateId of workorder.gateIds) {
       if (gatesText && !knownGates.has(gateId)) report(`${workorder.file}: references unknown gate ${gateId}`);
+      if (blindGates.has(gateId)) report(`${workorder.file}: Blind acceptance ${gateId} must not appear in workorder gate_ids; it runs independently at wave pre-flight`);
     }
     for (const dodId of workorder.dodIds) {
       if (dodText && !knownDod.has(dodId)) report(`${workorder.file}: references unknown DoD item ${dodId}`);
@@ -692,7 +721,7 @@ for (const workorder of workorders) {
     if (!mapping.size) {
       policy('08-quality-gates.md has no parseable `Gate -> DoD Mapping` table rows');
     } else {
-      const coveredDod = new Set([...mapping.values()].flat());
+      const coveredDod = new Set([...mapping.entries()].filter(([gate]) => !blindGates.has(gate)).flatMap(([, ids]) => ids));
       for (const dodId of knownDod) {
         if (!coveredDod.has(dodId)) policy(`${dodId} is not covered by any gate in the Gate -> DoD Mapping table`);
       }
@@ -721,7 +750,7 @@ for (const workorder of workorders) {
         if (!gateIds.length) policy(`Edge Case -> Gate Mapping row for ${edgeCases.join(', ')} names no gate`);
         for (const gateId of gateIds) {
           if (!knownGates.has(gateId)) policy(`Edge Case -> Gate Mapping references ${gateId}, which 08-quality-gates.md does not define`);
-          else edgeCases.forEach((edgeCase) => covered.add(edgeCase));
+          else if (!blindGates.has(gateId)) edgeCases.forEach((edgeCase) => covered.add(edgeCase));
         }
       }
       for (const edgeCase of knownEdgeCases) {
@@ -964,9 +993,9 @@ for (const workorder of workorders) {
 {
   const policy = (message) => (GATED.has(status) ? err(message) : warn(message));
   const definitions = [
-    { pattern: /R-\d+/g, definedIn: '03-risk-register.md', label: 'risk' },
-    { pattern: /G-\d+/g, definedIn: '08-quality-gates.md', label: 'gate' },
-    { pattern: /DOD-\d+/g, definedIn: '09-dod.md', label: 'DoD item' },
+    { pattern: /(?<![A-Za-z0-9])R-\d+/g, definedIn: '03-risk-register.md', label: 'risk' },
+    { pattern: /(?<![A-Za-z0-9])G-\d+/g, definedIn: '08-quality-gates.md', label: 'gate' },
+    { pattern: /(?<![A-Za-z0-9])DOD-\d+/g, definedIn: '09-dod.md', label: 'DoD item' },
   ];
   for (const definition of definitions) {
     const definingText = read(join(packageDir, definition.definedIn));
