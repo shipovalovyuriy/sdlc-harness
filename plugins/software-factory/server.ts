@@ -356,6 +356,7 @@ export default async function plugin(bb: BbPluginApi) {
     handoffs: db.prepare<[string], { id: number; from_thread: string; to_thread: string; created_at: number; confirmed_at: number | null; slice_watermark: number | null }>(
       `SELECT id, from_thread, to_thread, created_at, confirmed_at, slice_watermark FROM handoffs WHERE aird_id = ? ORDER BY id`,
     ),
+    continueThread: db.prepare(`UPDATE threads SET task = ?, refs = ? WHERE thread_id = ?`),
     confirmHandoff: db.prepare(`UPDATE handoffs SET confirmed_at = ?, slice_watermark = ? WHERE id = ?`),
     sliceCount: db.prepare<[string, number], { n: number }>(`SELECT COUNT(*) AS n FROM slices WHERE aird_id = ? AND id > ?`),
     maxSliceId: db.prepare<[string], { m: number | null }>(`SELECT MAX(id) AS m FROM slices WHERE aird_id = ?`),
@@ -1384,6 +1385,9 @@ export default async function plugin(bb: BbPluginApi) {
   // Track idle/failed transitions for sf_wait_agents and refresh open pages.
   const finished = new Map<string, { status: "idle" | "error"; text: string | null; at: number }>();
   const startedAt = new Map<string, number>();
+  /** Agents given a follow-up: until their new turn starts, their old answer is not the result. */
+  const resumedAt = new Map<string, number>();
+  const awaitingStart = (id: string) => resumedAt.has(id) && !startedAt.has(id) && !finished.has(id);
   bb.events.on("thread.created", ({ thread }) => {
     const parentId = (thread as { parentThreadId?: string | null }).parentThreadId ?? null;
     if (!parentId) return;
@@ -1460,9 +1464,9 @@ export default async function plugin(bb: BbPluginApi) {
         const status = statuses.get(id)?.status;
         if (!status) return false; // deleted: nothing to wait for
         if (RUNNING.has(status)) return true;
-        // Freshly spawned threads can read idle before their first turn starts.
-        const sinceSpawn = Date.now() - (spawnedAt.get(id) ?? 0);
-        return !finished.has(id) && !startedAt.has(id) && sinceSpawn < 20_000;
+        // Freshly spawned or continued threads can read idle before their turn starts.
+        const since = Date.now() - Math.max(spawnedAt.get(id) ?? 0, resumedAt.get(id) ?? 0);
+        return !finished.has(id) && !startedAt.has(id) && since < 20_000;
       });
       if (pending.length === 0 || Date.now() >= deadline || signal?.aborted) break;
       await sleep(3000, signal);
@@ -1473,9 +1477,9 @@ export default async function plugin(bb: BbPluginApi) {
       const row = q.threadById.get(id);
       const status = statuses.get(id)?.status ?? "deleted";
       const header = `### ${row?.title ?? id} (${id}) — ${status}`;
-      if (RUNNING.has(status)) {
+      if (RUNNING.has(status) || awaitingStart(id)) {
         stillRunning += 1;
-        parts.push(`${header}\nЕщё работает.`);
+        parts.push(`${header}\n${RUNNING.has(status) ? "Ещё работает." : "Продолжение ещё не началось."}`);
         continue;
       }
       let output: string | null = null;
@@ -1493,6 +1497,71 @@ export default async function plugin(bb: BbPluginApi) {
     return parts.join("\n\n");
   }
 
+
+  /** Above this an agent's own context costs more than a fresh agent pointed at its results (aird-delivery-loop). */
+  const CONTINUE_MAX_TOKENS = 300_000;
+  const CONTINUE_MAX_PCT = 60;
+
+  /**
+   * Gives an existing agent of this AIRD a follow-up in its own thread: it
+   * keeps what it already learned (the code it read, its probe harness, its
+   * conclusions) instead of a new agent rediscovering them.
+   */
+  async function continueAgent(parentThreadId: string, threadId: string, task: string, workorders: string[]) {
+    const parentRow = q.threadById.get(parentThreadId);
+    if (!parentRow || parentRow.kind !== "orchestrator") throw new Error("sf_continue_agent доступен только оркестратору AIRD");
+    const row = q.threadById.get(threadId);
+    if (!row || row.kind !== "agent" || row.aird_id !== parentRow.aird_id) throw new Error(`${threadId} — не агент этого AIRD`);
+    const record = q.airdById.get(row.aird_id);
+    if (!record) throw new Error("AIRD этого треда не найден");
+    if (row.role !== "test-author" && row.role !== "reviewer" && record.acceptance_folder && task.includes(record.acceptance_folder)) {
+      throw new Error("Исполнителю нельзя передавать путь к приёмочным тестам: он получает только вердикты по сценариям (sf_run_acceptance).");
+    }
+    let status: string;
+    try {
+      status = (await bb.sdk.threads.get({ threadId })).status;
+    } catch {
+      throw new Error(`Тред агента ${threadId} недоступен — запусти нового через sf_spawn_agent`);
+    }
+    if (RUNNING.has(status) || awaitingStart(threadId)) throw new Error(`Агент ${row.title} ещё работает — дождись его через sf_wait_agents`);
+    if (parentRow.stage === "delivery" && ["backend-worker", "frontend-worker", "worker"].includes(row.role)) {
+      const session = sessionOf(record.id, parentThreadId);
+      if (session.fromHere) throw new Error(`Передача уже записана: работа продолжается в @thread:${session.fromHere.to_thread}`);
+      if (session.slices >= SLICE_LIMIT) throw new Error(`В этой сессии уже ${session.slices} срезов (лимит ${SLICE_LIMIT}): запиши checkpoint и вызови sf_handoff`);
+    }
+    const context = await contextOf(threadId);
+    if ((context.used ?? 0) >= CONTINUE_MAX_TOKENS || (context.pct ?? 0) >= CONTINUE_MAX_PCT) {
+      throw new Error(`Контекст агента уже ${context.used ?? "?"} токенов (${context.pct ?? "?"}%): продолжать дороже, чем начать заново. Запусти свежего через sf_spawn_agent и дай ему пути к результатам этого агента.`);
+    }
+    const pkgDir = packageDir({ folder: record.folder, slug: record.slug, record });
+    const attached = inputsNamedIn(task, listInputs(pkgDir));
+    const projectHost = (await projectInfo(record.project_id)).hostId;
+    const text = [
+      "## Продолжение от оркестратора",
+      "",
+      task.trim(),
+      "",
+      "Опирайся на то, что уже сделал в этом треде, и перечитывай только изменившиеся файлы. Ответ — в формате, заданном выше; если не задан — короткий отчёт для оркестратора.",
+    ].join("\n");
+    finished.delete(threadId);
+    startedAt.delete(threadId);
+    resumedAt.set(threadId, Date.now());
+    try {
+      await bb.sdk.threads.send({
+        threadId,
+        input: [{ type: "text", text, mentions: [] }, ...inputParts(attached, projectHost)],
+        mode: "queue-if-active",
+      });
+    } catch (error) {
+      resumedAt.delete(threadId);
+      throw error;
+    }
+    const previous = (() => { try { return JSON.parse(row.refs ?? "[]") as string[]; } catch { return []; } })();
+    const refs = [...new Set([...previous, ...workorders.map((id) => id.trim().toUpperCase()).filter((id) => /^(WO-\d+[A-Z]?|F-\d{2,})$/u.test(id))])];
+    q.continueThread.run(`${row.task ?? ""}\n\n--- продолжение ---\n${task}`.slice(-4000), JSON.stringify(refs), threadId);
+    publishChanged();
+    return { title: row.title, context };
+  }
 
   // ------------------------------------------------------------ lifecycle
   // Stage transitions and the session budget are Factory operations: the
@@ -1582,16 +1651,16 @@ export default async function plugin(bb: BbPluginApi) {
     };
   }
 
-  async function contextOf(threadId: string): Promise<{ pct: number | null; providerSession: string | null }> {
+  async function contextOf(threadId: string): Promise<{ pct: number | null; used: number | null; providerSession: string | null }> {
     try {
       const thread = (await bb.sdk.threads.get({ threadId })) as unknown as {
         contextWindowUsage?: { usedTokens?: number; modelContextWindow?: number; snapshot?: { providerSessionId?: string } };
       };
       const usage = thread.contextWindowUsage;
       const pct = usage?.modelContextWindow ? Math.round(((usage.usedTokens ?? 0) / usage.modelContextWindow) * 100) : null;
-      return { pct, providerSession: usage?.snapshot?.providerSessionId ?? null };
+      return { pct, used: usage?.usedTokens ?? null, providerSession: usage?.snapshot?.providerSessionId ?? null };
     } catch {
-      return { pct: null, providerSession: null };
+      return { pct: null, used: null, providerSession: null };
     }
   }
 
@@ -2223,6 +2292,28 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   bb.agents.registerTool({
+    name: "sf_continue_agent",
+    description:
+      "Software Factory: продолжить работу уже запущенного агента в его же треде. Используй, когда следующий шаг прямо продолжает его работу (та же область или API, его код и выводы нужны дальше), а контекст агента ещё небольшой: он не будет изучать всё заново. Для другой задачи или большого контекста — свежий агент через sf_spawn_agent. Результат забирай через sf_wait_agents.",
+    presentation: { label: { pending: "Продолжаю агента", completed: "Агент продолжает" } },
+    parameters: z.object({
+      threadId: z.string().trim().min(1).describe("threadId агента, которого продолжаем (из sf_spawn_agent)"),
+      task: z.string().trim().min(1).max(60000).describe("Что сделать дальше: цель, что изменилось с прошлого шага, ожидаемый результат"),
+      workorders: z.array(z.string().trim().max(20)).max(20).optional().describe("ID воркордеров/фиксов, добавляемые к работе агента"),
+    }),
+    async execute({ threadId: target, task, workorders }, { threadId }) {
+      if (!threadId) return { content: [{ type: "text", text: "Нет threadId вызывающего треда" }], isError: true };
+      try {
+        const { title, context } = await continueAgent(threadId, target, task, workorders ?? []);
+        const size = context.used === null ? "контекст: н/д" : `контекст ${Math.round(context.used / 1000)} тыс. токенов${context.pct === null ? "" : ` (${context.pct}%)`}`;
+        return `Агент \`${title}\` продолжает в том же треде @thread:${target} (${size}). Дождись результата: sf_wait_agents({ threadIds: ["${target}"] }).`;
+      } catch (error) {
+        return { content: [{ type: "text", text: `Не удалось продолжить агента: ${String(error).replace(/^Error: /u, "")}` }], isError: true };
+      }
+    },
+  });
+
+  bb.agents.registerTool({
     name: "sf_wait_agents",
     description:
       "Software Factory: дождаться завершения агентских тредов, запущенных sf_spawn_agent, и получить их финальные ответы. Если таймаут вышел раньше, вызови снова.",
@@ -2406,7 +2497,7 @@ export default async function plugin(bb: BbPluginApi) {
       const stage = meta.stage === "delivery" ? "delivery" : "discovery";
       const roles = AIRD_SKILL_AGENTS[stage].join(", ");
       return {
-        tools: ["sf_spawn_agent", "sf_wait_agents", "sf_agent_roles", "sf_ask_user", "sf_run_acceptance", "sf_transition", "sf_slice_begin", "sf_handoff"],
+        tools: ["sf_spawn_agent", "sf_continue_agent", "sf_wait_agents", "sf_agent_roles", "sf_ask_user", "sf_run_acceptance", "sf_transition", "sf_slice_begin", "sf_handoff"],
         skills: [],
         instructions: [
           "## Software Factory: субагенты — отдельные bb-треды",
@@ -2416,6 +2507,7 @@ export default async function plugin(bb: BbPluginApi) {
           "- task — полный бриф: агент начинает с чистого контекста и видит только его и файлы.",
           "- model — только если скилл называет модель для этого запуска (`model: sonnet` для механической работы): передай её как есть; иначе не указывай — работает модель роли.",
           "- Независимых агентов запускай пачкой, затем жди всех одним `sf_wait_agents`. Если вернулось «ещё работает» — вызови снова.",
+          "- Следующий шаг прямо продолжает работу уже запущенного агента (та же проба или область, его временный код и выводы нужны дальше) — `sf_continue_agent({ threadId, task })` вместо нового агента: в task — что изменилось и что сделать. Свежий агент через `sf_spawn_agent` — для другой задачи или когда Factory откажет из-за большого контекста агента (от 300 тыс. токенов или 60%).",
           "- Пользователь разрешил запуск этих тредов, запуская AIRD из Software Factory: не спрашивай разрешения на каждый.",
           "- Встроенный Agent/Task tool используй только если sf_spawn_agent вернул ошибку.",
           "",
