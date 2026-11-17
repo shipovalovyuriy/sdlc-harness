@@ -104,6 +104,18 @@ function strList(value: Json): string[] {
     .filter(Boolean);
 }
 
+/** A list whose items may contain `: ` (YAML reads `- a.md#1. Панель: статусы` as a one-key map). */
+function textList(value: Json): string[] {
+  if (!Array.isArray(value)) return strList(value);
+  return value.flatMap((item) => {
+    if (item && typeof item === "object" && !Array.isArray(item)) {
+      return Object.entries(item as Record<string, Json>).map(([key, inner]) => `${key}: ${str(inner) ?? ""}`.trim());
+    }
+    const text = str(item);
+    return text === null ? [] : [text];
+  });
+}
+
 function bool(value: Json): boolean | null {
   if (typeof value === "boolean") return value;
   if (value === "true") return true;
@@ -222,6 +234,8 @@ export interface RawWorkorder {
   agent: string | null;
   /** `allowed_write_paths`, relative to the folder delivery works in. */
   writePaths: string[];
+  /** `docs_to_read`: `file#Heading` references into the package. */
+  docsToRead?: string[];
 }
 
 export interface RawFix {
@@ -444,6 +458,7 @@ function parseWorkorders(dir: string): RawWorkorder[] {
           dodIds: strList(data.dod_ids),
           agent: bulletValue(body, ["Recommended agent", "Агент"]),
           writePaths: strList(data.allowed_write_paths),
+          docsToRead: textList(data.docs_to_read),
         },
       ];
     })

@@ -40,12 +40,14 @@ import {
 } from "./src/agents";
 import { airdCommits, commitDetail, commitsByHash, isGitFolder, packageCommitRefs, workspaceCommits } from "./src/git";
 import { readEval, readMetrics } from "./src/metrics";
-import { acceptanceBase, acceptanceSuiteRevision, deliveryRevision, ensureAcceptanceWorktree, ensureWorkspaceCheckout, ensureWorktree, gitDirs, gitText, isLinkedWorktree, migrateWorktreeToClone, nestedRepos, pushBranch, refreshAcceptanceWorktree, repoOfPath, withBaselineCheckout, type WorkspaceRepo } from "./src/worktree";
+import { acceptanceBase, acceptanceSuiteRevision, deliveryRevision, ensureAcceptanceWorktree, ensureWorkspaceCheckout, ensureWorktree, gitDirs, gitText, isLinkedWorktree, migrateWorktreeToClone, nestedRepos, pushBranch, refreshAcceptanceWorktree, repoOfPath, withBaselineCheckout, ensureSuiteRepository, expandHome, isWorkspaceBase, parseWorkspaceBase, withWorkspaceBaseline, workspaceBase, workspaceRevision, type WorkspaceRepo } from "./src/worktree";
 import { assessRun, hasSuite, runSuite, selectScenarioScope, type ScenarioResult, type SuiteRun } from "./src/acceptance";
 import { LETTERS, answerSummary, parseTextQuestion, providerQuestion, textAnswer } from "./src/questions";
 import { SECRET_NAME, secretLines, type SecretInfo } from "./src/project-secrets";
+import { briefSections, sectionsMarkdown } from "./src/sections";
 import { SLICE_LIMIT, allowedTargets, appendTransition, historyProblem, readTransitions, setField, sliceDecision, type Transition } from "./src/lifecycle";
 import { inputLines, inputParts, inputsNamedIn, listInputs, removeInput, saveInput, type InputFile, type InputPart } from "./src/inputs";
+import { modelFallback } from "./src/model-fallback";
 import {
   rpcContract,
   type AgentThread,
@@ -59,6 +61,7 @@ import {
   type GateStatus,
   type ItemLabel,
   type ProjectSummary,
+  type ReserveModel,
 } from "./src/contract";
 
 export { rpcContract };
@@ -143,6 +146,8 @@ interface ThreadRow {
   task: string | null;
   /** How many follow-ups the orchestrator sent to this agent with sf_continue_agent. */
   continuations?: number | null;
+  /** When Factory told this implementation worker its action budget was spent. */
+  budget_signal_at?: number | null;
 }
 
 interface QuestionRow {
@@ -332,6 +337,12 @@ export default async function plugin(bb: BbPluginApi) {
     )`,
     `ALTER TABLE handoffs ADD COLUMN slice_watermark INTEGER`,
     `ALTER TABLE threads ADD COLUMN continuations INTEGER NOT NULL DEFAULT 0`,
+    `CREATE TABLE fallback_reserves (kind TEXT NOT NULL, name TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, effort TEXT, PRIMARY KEY(kind,name))`,
+    `CREATE TABLE fallback_tasks (thread_id TEXT PRIMARY KEY, root_id TEXT NOT NULL, cycle TEXT NOT NULL, input TEXT NOT NULL, reserve TEXT, using_reserve INTEGER NOT NULL DEFAULT 0)`,
+    `CREATE INDEX fallback_tasks_root ON fallback_tasks(root_id)`,
+    `CREATE TABLE fallback_jobs (request_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, root_id TEXT NOT NULL, cycle TEXT NOT NULL, event TEXT NOT NULL, action TEXT NOT NULL, status TEXT NOT NULL, due_at INTEGER NOT NULL, reason TEXT NOT NULL, target_thread TEXT, from_provider TEXT, from_model TEXT, to_provider TEXT, to_model TEXT, created_at INTEGER NOT NULL)`,
+    `CREATE INDEX fallback_jobs_pending ON fallback_jobs(status,due_at)`,
+    `ALTER TABLE threads ADD COLUMN budget_signal_at INTEGER`,
   ]);
 
   const withThreadDefaults = (row: Record<string, unknown>) => ({ refs: null, stage_node: null, task: null, provider: null, model: null, effort: null, ...row });
@@ -360,6 +371,10 @@ export default async function plugin(bb: BbPluginApi) {
     insertHandoff: db.prepare(`INSERT INTO handoffs (aird_id, from_thread, to_thread, created_at) VALUES (?, ?, ?, ?)`),
     handoffs: db.prepare<[string], { id: number; from_thread: string; to_thread: string; created_at: number; confirmed_at: number | null; slice_watermark: number | null }>(
       `SELECT id, from_thread, to_thread, created_at, confirmed_at, slice_watermark FROM handoffs WHERE aird_id = ? ORDER BY id`,
+    ),
+    markBudgetSignal: db.prepare(`UPDATE threads SET budget_signal_at = ? WHERE thread_id = ?`),
+    budgetCandidates: db.prepare<[number], ThreadRow>(
+      `SELECT * FROM threads WHERE kind = 'agent' AND stage = 'delivery' AND budget_signal_at IS NULL AND role IN ('backend-worker', 'frontend-worker', 'worker') AND created_at > ?`,
     ),
     continueThread: db.prepare(`UPDATE threads SET task = ?, refs = ?, continuations = coalesce(continuations, 0) + 1 WHERE thread_id = ?`),
     confirmHandoff: db.prepare(`UPDATE handoffs SET confirmed_at = ?, slice_watermark = ? WHERE id = ?`),
@@ -642,13 +657,25 @@ export default async function plugin(bb: BbPluginApi) {
     return q.airdById.get(id)!;
   }
 
-  /** The git checkout blind acceptance judges: the AIRD worktree, or its single target repository. */
+  /** Repositories the AIRD changes (the package repository excluded). */
+  function codeRepos(row: AirdRow): WorkspaceRepo[] {
+    return reposOf(row).filter((repo) => !repo.package);
+  }
+
+  /**
+   * What blind acceptance judges: the AIRD worktree, its single target
+   * repository, or — when the AIRD changes several repositories — the delivery
+   * workspace root with every repository at its own path.
+   */
   function codeRoot(row: AirdRow): string {
-    const repos = reposOf(row).filter((repo) => !repo.package);
-    if (repos.length > 1) {
-      throw new Error(`Слепая приёмка работает с одним репозиторием, а этот AIRD меняет ${repos.map((repo) => repo.rel).join(", ")}`);
-    }
+    const repos = codeRepos(row);
+    if (repos.length > 1) return workspaceRootOf(row);
     return repos[0]?.path ?? row.work_folder ?? row.folder;
+  }
+
+  /** Implementation identity: one repository, or all changed repositories of a workspace. */
+  async function revisionOf(target: string, base: string | null): Promise<string> {
+    return isWorkspaceBase(base) ? workspaceRevision(target, parseWorkspaceBase(base!)) : deliveryRevision(target);
   }
 
   /** The folder a thread of this AIRD runs in: everything it may write is inside it. */
@@ -762,6 +789,7 @@ export default async function plugin(bb: BbPluginApi) {
     threads: ThreadRow[],
     live: Map<string, LiveThread>,
   ): AirdSummary {
+    threads = threads.filter((thread) => fallback.current(thread.thread_id) === thread.thread_id);
     const state = pkg.state;
     const status = state?.status ?? (pkg.exists ? "discovery" : "draft");
     const { current, progress } = deriveStages(pkg);
@@ -881,8 +909,11 @@ export default async function plugin(bb: BbPluginApi) {
   async function detail(id: string): Promise<AirdDetail> {
     const entry = await findEntry(id);
     const pkg = readPackage(packageDir(entry));
-    const threads = q.threadsByAird.all(entry.id);
+    const threads = q.threadsByAird.all(entry.id).filter((thread) => fallback.current(thread.thread_id) === thread.thread_id);
     const live = await liveThreads(threads.map((thread) => thread.thread_id));
+    const tokens = new Map(
+      await Promise.all(threads.map(async (thread) => [thread.thread_id, await tokensOf(thread.thread_id, RUNNING.has(live.get(thread.thread_id)?.status ?? ""))] as const)),
+    );
     const summary = summarize(entry, pkg, threads, live);
     const labels = labelsFor(entry.id);
     const { stages } = deriveStages(pkg);
@@ -897,8 +928,8 @@ export default async function plugin(bb: BbPluginApi) {
         kind: thread.kind,
         stage: thread.stage,
         title: info?.title ?? thread.title,
-        status: info?.status ?? "deleted",
-        parentThreadId: thread.parent_thread_id,
+        status: fallback.isPending(thread.thread_id) ? "pending" : info?.status ?? "deleted",
+        parentThreadId: thread.parent_thread_id ? fallback.current(thread.parent_thread_id) : null,
         createdAt: thread.created_at,
         archived: info ? info.archived : true,
         model: thread.model,
@@ -908,6 +939,11 @@ export default async function plugin(bb: BbPluginApi) {
         refs: parseRefs(thread.refs),
         stageNode: thread.stage_node,
         task: thread.task,
+        logicalThreadId: fallback.root(thread.thread_id),
+        recovery: fallback.state(thread.thread_id),
+        sessions: fallback.sessions(thread.thread_id),
+        tokens: tokens.get(thread.thread_id) ?? null,
+        budgetSignalAt: thread.budget_signal_at ?? null,
       };
     });
     const hostId = (await listProjects()).find((project) => project.id === entry.projectId)?.hostId ?? null;
@@ -948,7 +984,7 @@ export default async function plugin(bb: BbPluginApi) {
       deliveryReposReady: reposOf(entry.record).length > 0,
       layout: entry.record && (entry.record.worktree || entry.record.repos) ? await checkLayout(entry.record) : null,
       lifecycle: lifecycleOf(entry.record, pkg.state?.status ?? "", splitFrontmatter(readText(join(packageDir(entry), "STATE.md")) ?? "").data as Record<string, unknown>),
-      session: await sessionView(entry.id, threads),
+      session: { ...(await sessionView(entry.id, threads)), tokens: tokensByProvider(threads, tokens), limits: await providerLimits(threads) },
     };
   }
 
@@ -1134,6 +1170,7 @@ export default async function plugin(bb: BbPluginApi) {
       effort: runtime.effort,
       provider: wanted.provider,
     }));
+    fallback.remember(q.threadById.get(thread.id)!, first.input ?? [{ type: "text", text: first.prompt!, mentions: [] }], reserveFor("orchestrator", stage));
     publishChanged();
     return thread;
   }
@@ -1269,6 +1306,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   async function spawnAgent(parentThreadId: string, role: string, task: string, label: string | undefined, workorders: string[] = [], modelRequest?: string) {
+    if (fallback.current(parentThreadId) !== parentThreadId) throw new Error(`Оркестратор продолжен в @thread:${fallback.current(parentThreadId)}`);
     const parentRow = q.threadById.get(parentThreadId);
     if (!parentRow || parentRow.kind !== "orchestrator") {
       throw new Error("sf_spawn_agent доступен только в треде-оркестраторе Software Factory");
@@ -1323,11 +1361,18 @@ export default async function plugin(bb: BbPluginApi) {
       slug: record.slug,
       folder: acceptance?.acceptance_folder ?? record.work_folder ?? record.folder,
       packagePath: acceptance
-        ? `${packageDir({ folder: record.folder, slug: record.slug, record })}/09-dod.md#Acceptance Scenarios; только названные сценариями разделы 05-api-contracts.md / 02-ui-spec.md (либо 04-trd.md / 06-data-models.md для CLI/данных) и команды запуска из 08-quality-gates.md. workorders/, fix-workorders/, evidence/, отчёты верификации и код delivery не открывай. Набор пиши в acceptance/${record.slug}/ своей рабочей папки. Когда набор закоммичен — вызови sf_register_suite({ runScript: "<абсолютный путь к run.sh>" }): Factory сохранит папку и commit и будет запускать ровно его, на базе волны и на рабочей копии реализации. Без регистрации приёмка не запустится`
+        ? `${packageDir({ folder: record.folder, slug: record.slug, record })}/09-dod.md#Acceptance Scenarios; только названные сценариями разделы 05-api-contracts.md / 02-ui-spec.md (либо 04-trd.md / 06-data-models.md для CLI/данных) и команды запуска из 08-quality-gates.md. workorders/, fix-workorders/, evidence/, отчёты верификации и код delivery не открывай. Набор пиши в acceptance/${record.slug}/ своей рабочей папки. Когда набор закоммичен — вызови sf_register_suite({ runScript: "<абсолютный путь к run.sh>" }): Factory сохранит папку и commit и будет запускать ровно его, на базе волны и на рабочей копии реализации. Без регистрации приёмка не запустится${codeRepos(acceptance).length > 1 ? `. AIRD меняет несколько репозиториев: \`run.sh <target-dir>\` получает корень рабочего пространства, в нём репозитории ${codeRepos(acceptance).map((repo) => `\`${repo.rel}\``).join(", ")} лежат по этим путям; на базе волны Factory подставит копию пространства, где каждый из них стоит на своём базовом коммите` : ""}`
         : `${AIRD_DIR}/${record.slug}/`,
       orchestratorThreadId: parentThreadId,
       materials: inputLines(inputs, `${pkgDirNow}/`),
       attachedCount: Math.min(attached.length, inputParts(attached, null).length),
+      actionBudget: parentRow.stage === "delivery" && ["backend-worker", "frontend-worker", "worker"].includes(role) ? WORKER_ACTION_BUDGET : null,
+      sections: parentRow.stage === "delivery" && ["backend-worker", "frontend-worker", "worker"].includes(role)
+        ? sectionsMarkdown(briefSections(
+            [...new Set(refs.flatMap((id) => pkgNow.workorders.find((wo) => wo.id === id)?.docsToRead ?? []))],
+            [pkgDirNow, record.work_folder ?? record.folder, record.folder],
+          ))
+        : "",
     });
     const projectHost = (await projectInfo(record.project_id)).hostId;
     const acceptanceHost = acceptance ? projectHost : null;
@@ -1383,11 +1428,74 @@ export default async function plugin(bb: BbPluginApi) {
       provider: wanted.provider,
       refs: JSON.stringify(refs),
       stage_node: stageNode,
-      task: task.slice(0, 2000),
+      task,
     }));
+    fallback.remember(q.threadById.get(thread.id)!, base.input ?? [{ type: "text", text: base.prompt!, mentions: [] }], reserveFor("agent", role));
     publishChanged();
     return { thread, title, model: used.model, effort: used.effort, provider: wanted.provider, refs, stageNode };
   }
+
+  function reserveFor(kind: "agent" | "orchestrator", name: string): ReserveModel | null {
+    return db.prepare<[string, string], ReserveModel>("SELECT provider,model,effort FROM fallback_reserves WHERE kind=? AND name=?").get(kind, name) ?? null;
+  }
+
+  async function validateReserve(reserve: ReserveModel) {
+    const providers = await availableProviders();
+    const provider = providers.find((item) => item.id === reserve.provider);
+    if (!provider) throw new Error(`Запасной провайдер ${reserve.provider} недоступен`);
+    const model = provider.models.find((item) => item.id === reserve.model);
+    if (!model) throw new Error(`Запасная модель ${reserve.model} отсутствует у ${reserve.provider}`);
+    if (reserve.effort && model.efforts.length && !model.efforts.includes(reserve.effort)) throw new Error(`Effort ${reserve.effort} не поддерживается запасной моделью ${reserve.model}`);
+  }
+
+  async function saveReserve(kind: "agent" | "orchestrator", name: string, reserve: ReserveModel | null | undefined) {
+    if (reserve === undefined) return; // Older clients saving primary options preserve the reserve.
+    if (reserve === null) db.prepare("DELETE FROM fallback_reserves WHERE kind=? AND name=?").run(kind, name);
+    else {
+      await validateReserve(reserve);
+      db.prepare(`INSERT INTO fallback_reserves(kind,name,provider,model,effort) VALUES (?,?,?,?,?)
+        ON CONFLICT(kind,name) DO UPDATE SET provider=excluded.provider,model=excluded.model,effort=excluded.effort`).run(kind, name, reserve.provider, reserve.model, reserve.effort);
+    }
+    for (const row of q.allThreads.all().filter((thread) => thread.kind === kind && (kind === "agent" ? thread.role : thread.stage) === name)) {
+      db.prepare("UPDATE fallback_tasks SET reserve=? WHERE thread_id=?").run(reserve ? JSON.stringify(reserve) : null, row.thread_id);
+      if (reserve) db.prepare("UPDATE fallback_jobs SET to_provider=?,to_model=? WHERE thread_id=? AND action='switch' AND status='pending'").run(reserve.provider, reserve.model, row.thread_id);
+      else db.prepare("UPDATE fallback_jobs SET status='cancelled' WHERE thread_id=? AND status IN ('pending','dispatching')").run(row.thread_id);
+    }
+  }
+
+  const fallback = modelFallback(bb, {
+    thread: (id) => q.threadById.get(id),
+    reserve: (row) => reserveFor(row.kind, row.kind === "orchestrator" ? row.stage ?? "delivery" : row.role),
+    validate: async (reserve, thread) => {
+      await validateReserve(reserve);
+      if (reserve.provider === thread.provider && reserve.model === thread.model) throw new Error("Запасная модель совпадает с основной");
+      const family = (provider: string | null) => provider ? runtimeFamily(provider) ?? provider : null;
+      const writers = ["worker", "backend-worker", "frontend-worker", "aird-delivery-loop"];
+      const peers = q.threadsByAird.all(thread.aird_id).filter((row) => fallback.current(row.thread_id) === row.thread_id);
+      const relevant = thread.role === "test-author" ? peers.filter((row) => writers.includes(row.role))
+        : writers.includes(thread.role) ? peers.filter((row) => row.role === "test-author") : [];
+      if (relevant.some((row) => family(row.provider) !== family(thread.provider) && family(row.provider) === family(reserve.provider))) {
+        throw new Error("Запасной провайдер нарушает независимость test-author и исполнителя. Выбери другого провайдера или продолжи вручную.");
+      }
+    },
+    transferred: (source, target, runtime) => {
+      const row = q.threadById.get(source);
+      if (!row) throw new Error("Исходный агент не найден");
+      q.insertThread.run(withThreadDefaults({ ...row, thread_id: target, provider: runtime.provider, model: runtime.model, effort: runtime.effort, created_at: Date.now() }));
+    },
+    starting: (id, newThread) => {
+      if (newThread && (finished.has(id) || startedAt.has(id))) return;
+      finished.delete(id);
+      startedAt.delete(id);
+      resumedAt.set(id, Date.now());
+    },
+    changed: publishChanged,
+    blocked: (row, requestId, reason) => {
+      q.insertQuestion.run({ id: `fallback:${requestId}`, aird_id: row.aird_id, thread_id: row.thread_id, source: "text", kind: "clarification", number: null,
+        context: `${row.title}: ${reason}\nПроверь настройки модели и состояние рабочей папки. Ответ будет отправлен агенту как ручное продолжение.`,
+        parts: JSON.stringify([{ id: "q", prompt: "Как продолжить задачу?", topic: "Восстановление агента", options: [], recommended: null, recommendationReason: null, multiSelect: false, allowFreeText: true }]), created_at: Date.now() });
+    },
+  });
 
   // Track idle/failed transitions for sf_wait_agents and refresh open pages.
   const finished = new Map<string, { status: "idle" | "error"; text: string | null; at: number }>();
@@ -1423,6 +1531,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.active", ({ thread }) => {
     startedAt.set(thread.id, Date.now());
+    usageCache.delete(thread.id);
     // The user answered a chat-text question in the thread itself.
     for (const open of q.openTextQuestions.all(thread.id)) q.closeQuestion.run("answered", "ответ в треде", "thread", Date.now(), open.id);
     finished.delete(thread.id);
@@ -1430,6 +1539,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
     finished.set(thread.id, { status: "idle", text: lastAssistantText ?? null, at: Date.now() });
+    usageCache.delete(thread.id);
     try {
       captureTextQuestion(thread.id, lastAssistantText ?? null);
     } catch (error) {
@@ -1466,24 +1576,38 @@ export default async function plugin(bb: BbPluginApi) {
     const spawnedAt = new Map(threadIds.map((id) => [id, q.threadById.get(id)?.created_at ?? 0]));
     let statuses = new Map<string, LiveThread>();
     while (true) {
-      statuses = await liveThreads(threadIds);
+      statuses = await liveThreads(threadIds.map((id) => fallback.current(id)));
       const pending = threadIds.filter((id) => {
-        const status = statuses.get(id)?.status;
+        if (fallback.isPending(id)) return true;
+        if (fallback.state(id)?.status === "blocked") return false;
+        const status = statuses.get(fallback.current(id))?.status;
         if (!status) return false; // deleted: nothing to wait for
         if (RUNNING.has(status)) return true;
         // Freshly spawned or continued threads can read idle before their turn starts.
-        const since = Date.now() - Math.max(spawnedAt.get(id) ?? 0, resumedAt.get(id) ?? 0);
-        return !finished.has(id) && !startedAt.has(id) && since < 20_000;
+        const current = fallback.current(id);
+        const since = Date.now() - Math.max(q.threadById.get(current)?.created_at ?? spawnedAt.get(id) ?? 0, resumedAt.get(current) ?? 0);
+        return !finished.has(current) && !startedAt.has(current) && since < 20_000;
       });
       if (pending.length === 0 || Date.now() >= deadline || signal?.aborted) break;
       await sleep(3000, signal);
     }
     const parts: string[] = [];
     let stillRunning = 0;
-    for (const id of threadIds) {
+    for (const originalId of threadIds) {
+      const id = fallback.current(originalId);
       const row = q.threadById.get(id);
       const status = statuses.get(id)?.status ?? "deleted";
       const header = `### ${row?.title ?? id} (${id}) — ${status}`;
+      const recovery = fallback.state(id);
+      if (recovery?.status === "blocked") {
+        parts.push(`${header}\n${recovery.reason} Требуется решение пользователя в инбоксе Software Factory.`);
+        continue;
+      }
+      if (fallback.isPending(id)) {
+        stillRunning += 1;
+        parts.push(`${header}\nSoftware Factory продолжает задачу: ${recovery?.reason}.`);
+        continue;
+      }
       if (RUNNING.has(status) || awaitingStart(id)) {
         stillRunning += 1;
         parts.push(`${header}\n${RUNNING.has(status) ? "Ещё работает." : "Продолжение ещё не началось."}`);
@@ -1507,6 +1631,8 @@ export default async function plugin(bb: BbPluginApi) {
 
   /** Above this an agent's own context costs more than a fresh agent pointed at its results (aird-delivery-loop). */
   const CONTINUE_MAX_TOKENS = 300_000;
+  /** Tool actions (commands, reads, edits) after which a delivery worker is told to checkpoint and stop. */
+  const WORKER_ACTION_BUDGET = 100;
   const CONTINUE_MAX_PCT = 60;
 
   /**
@@ -1515,6 +1641,7 @@ export default async function plugin(bb: BbPluginApi) {
    * conclusions) instead of a new agent rediscovering them.
    */
   async function continueAgent(parentThreadId: string, threadId: string, task: string, workorders: string[]) {
+    threadId = fallback.current(threadId);
     const parentRow = q.threadById.get(parentThreadId);
     if (!parentRow || parentRow.kind !== "orchestrator") throw new Error("sf_continue_agent доступен только оркестратору AIRD");
     const row = q.threadById.get(threadId);
@@ -1530,7 +1657,7 @@ export default async function plugin(bb: BbPluginApi) {
     } catch {
       throw new Error(`Тред агента ${threadId} недоступен — запусти нового через sf_spawn_agent`);
     }
-    if (RUNNING.has(status) || awaitingStart(threadId)) throw new Error(`Агент ${row.title} ещё работает — дождись его через sf_wait_agents`);
+    if (RUNNING.has(status) || awaitingStart(threadId) || fallback.isPending(threadId)) throw new Error(`Агент ${row.title} ещё работает — дождись его через sf_wait_agents`);
     if (parentRow.stage === "delivery" && ["backend-worker", "frontend-worker", "worker"].includes(row.role)) {
       const session = sessionOf(record.id, parentThreadId);
       if (session.fromHere) throw new Error(`Передача уже записана: работа продолжается в @thread:${session.fromHere.to_thread}`);
@@ -1553,6 +1680,7 @@ export default async function plugin(bb: BbPluginApi) {
     finished.delete(threadId);
     startedAt.delete(threadId);
     resumedAt.set(threadId, Date.now());
+    fallback.appendInput(threadId, [{ type: "text", text, mentions: [] }, ...inputParts(attached, projectHost)]);
     try {
       await bb.sdk.threads.send({
         threadId,
@@ -1565,7 +1693,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
     const previous = (() => { try { return JSON.parse(row.refs ?? "[]") as string[]; } catch { return []; } })();
     const refs = [...new Set([...previous, ...workorders.map((id) => id.trim().toUpperCase()).filter((id) => /^(WO-\d+[A-Z]?|F-\d{2,})$/u.test(id))])];
-    q.continueThread.run(`${row.task ?? ""}\n\n--- продолжение ---\n${task}`.slice(-4000), JSON.stringify(refs), threadId);
+    q.continueThread.run(`${row.task ?? ""}\n\n--- продолжение ---\n${task}`, JSON.stringify(refs), threadId);
     publishChanged();
     return { title: row.title, context };
   }
@@ -1604,6 +1732,138 @@ export default async function plugin(bb: BbPluginApi) {
     }
     return found;
   }
+
+  // ------------------------------------------------------------ usage
+  // Every step of an agent re-sends its whole context, so its cost grows with
+  // the square of how long it runs. Factory shows each agent's tokens and tells
+  // a delivery worker when its action budget is spent: it commits what is
+  // green and writes what is left, and a fresh worker continues from that note.
+  const usageCache = new Map<string, { tokens: number | null; at: number }>();
+  async function tokensOf(threadId: string, running: boolean): Promise<number | null> {
+    const cached = usageCache.get(threadId);
+    if (cached && (!running || Date.now() - cached.at < 30_000)) return cached.tokens;
+    try {
+      const rows = (await bb.sdk.threads.events.list({ threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" })) as unknown as Array<{
+        data?: { tokenUsage?: { total?: { totalTokens?: number } } };
+      }>;
+      const total = rows[0]?.data?.tokenUsage?.total?.totalTokens;
+      const tokens = typeof total === "number" ? total : null;
+      usageCache.set(threadId, { tokens, at: Date.now() });
+      return tokens;
+    } catch {
+      return cached?.tokens ?? null;
+    }
+  }
+
+  /** The latest limit state each provider reported in this AIRD's recent threads (allowed / warning / blocked). */
+  const limitCache = new Map<string, { at: number; value: ProviderLimit | null }>();
+  interface ProviderLimit { provider: string; status: string; window: string | null; resetsAt: number | null; reportedAt: number }
+  async function latestLimitOf(threadId: string): Promise<ProviderLimit | null> {
+    const cached = limitCache.get(threadId);
+    if (cached && Date.now() - cached.at < 60_000) return cached.value;
+    let value: ProviderLimit | null = null;
+    try {
+      const rows = (await bb.sdk.threads.events.list({ threadId, types: ["provider/rateLimits/updated"], order: "desc", limit: "1" })) as unknown as Array<{
+        createdAt?: number | string;
+        data?: { rateLimits?: { providerId?: string; status?: string; windows?: Array<{ label?: string | null; status?: string; resetsAtMs?: number | null }> } };
+      }>;
+      const limits = rows[0]?.data?.rateLimits;
+      if (limits?.providerId) {
+        const window = limits.windows?.find((item) => item.status === limits.status) ?? limits.windows?.[0] ?? null;
+        value = { provider: limits.providerId, status: limits.status ?? "unknown", window: window?.label ?? null, resetsAt: window?.resetsAtMs ?? null, reportedAt: Number(rows[0]!.createdAt ?? 0) };
+      }
+    } catch { /* No limit events from this provider. */ }
+    limitCache.set(threadId, { at: Date.now(), value });
+    return value;
+  }
+  async function providerLimits(threads: ThreadRow[]): Promise<ProviderLimit[]> {
+    const recent = threads.filter((thread) => thread.created_at > Date.now() - 12 * 3600_000).slice(-20);
+    const latest = new Map<string, ProviderLimit>();
+    for (const value of await Promise.all(recent.map((thread) => latestLimitOf(thread.thread_id)))) {
+      if (!value) continue;
+      const known = latest.get(value.provider);
+      if (!known || value.reportedAt > known.reportedAt) latest.set(value.provider, value);
+    }
+    // A window that has already reset no longer limits anything.
+    return [...latest.values()].filter((limit) => limit.resetsAt === null || limit.resetsAt > Date.now() || limit.status === "allowed");
+  }
+
+  function tokensByProvider(threads: ThreadRow[], tokens: Map<string, number | null>) {
+    const byProvider = new Map<string, number>();
+    let total = 0;
+    for (const thread of threads) {
+      const value = tokens.get(thread.thread_id) ?? 0;
+      total += value;
+      const provider = thread.provider ?? "—";
+      byProvider.set(provider, (byProvider.get(provider) ?? 0) + value);
+    }
+    return {
+      total,
+      byProvider: [...byProvider].filter(([, value]) => value > 0).map(([provider, value]) => ({ provider, tokens: value })).sort((a, b) => b.tokens - a.tokens),
+    };
+  }
+
+  const ACTION_ITEMS = new Set(["commandExecution", "fileChange", "fileRead", "toolCall", "mcpToolCall", "webSearch", "webFetch"]);
+  const actionCounts = new Map<string, { afterSeq: string | null; count: number }>();
+  async function actionsOf(threadId: string): Promise<number> {
+    const state = actionCounts.get(threadId) ?? { afterSeq: null, count: 0 };
+    for (let page = 0; page < 20; page += 1) {
+      const rows = (await bb.sdk.threads.events.list({
+        threadId,
+        types: ["item/completed"],
+        order: "asc",
+        limit: "500",
+        ...(state.afterSeq ? { afterSeq: state.afterSeq } : {}),
+      })) as unknown as Array<{ seq: number | string; data?: { item?: { type?: string } } }>;
+      if (rows.length === 0) break;
+      for (const row of rows) if (ACTION_ITEMS.has(row.data?.item?.type ?? "")) state.count += 1;
+      state.afterSeq = String(rows[rows.length - 1]!.seq);
+      if (rows.length < 500) break;
+    }
+    actionCounts.set(threadId, state);
+    return state.count;
+  }
+
+  function budgetSignal(row: ThreadRow, actions: number): string {
+    const wo = parseRefs(row.refs).find((id) => /^WO-/u.test(id)) ?? "WO";
+    return [
+      "## Software Factory: бюджет воркера исчерпан",
+      "",
+      `Ты сделал ${actions} действий (бюджет ${WORKER_ACTION_BUDGET}). Каждый следующий шаг заново отправляет весь накопленный контекст, поэтому остаток дешевле сделает свежий воркер по короткой записке. Сейчас:`,
+      "",
+      "1. Не начинай новых шагов: доведи текущую правку до компилируемого состояния.",
+      "2. Прогони затронутые тесты (вывод — в файл, на экран только хвост).",
+      "3. Закоммить то, что проходит.",
+      `4. Запиши в пакете \`evidence/${wo}-progress.md\`: коммит, что сделано, что осталось — шаги с точными файлами и функциями, какие тесты красные и почему. Дизайн не пересказывай: следующий воркер получит воркордер.`,
+      `5. Заверши ответ строкой \`Статус: частично — остаток в evidence/${wo}-progress.md\`.`,
+    ].join("\n");
+  }
+
+  let budgetCheckRunning = false;
+  async function checkWorkerBudgets(): Promise<void> {
+    if (budgetCheckRunning) return;
+    budgetCheckRunning = true;
+    try {
+      for (const row of q.budgetCandidates.all(Date.now() - 24 * 3600_000)) {
+        try {
+          const status = (await bb.sdk.threads.get({ threadId: row.thread_id })).status;
+          if (!RUNNING.has(status)) continue;
+          const actions = await actionsOf(row.thread_id);
+          if (actions < WORKER_ACTION_BUDGET) continue;
+          await bb.sdk.threads.send({ threadId: row.thread_id, input: [{ type: "text", text: budgetSignal(row, actions), mentions: [] }], mode: "steer-if-active" });
+          q.markBudgetSignal.run(Date.now(), row.thread_id);
+          bb.log.info(`budget signal sent to ${row.thread_id} after ${actions} actions`);
+          publishChanged();
+        } catch (error) {
+          bb.log.warn(`budget check failed for ${row.thread_id}: ${String(error)}`);
+        }
+      }
+    } finally {
+      budgetCheckRunning = false;
+    }
+  }
+  const budgetTimer = setInterval(() => void checkWorkerBudgets(), 60_000);
+  bb.onDispose(() => clearInterval(budgetTimer));
 
   // ------------------------------------------------------------ lifecycle
   // Stage transitions and the session budget are Factory operations: the
@@ -1690,7 +1950,7 @@ export default async function plugin(bb: BbPluginApi) {
       threadId: orchestrator?.thread_id ?? null,
       contextPct: context.pct,
       agents: {
-        started: threads.filter((thread) => thread.kind === "agent").length,
+        started: new Set(threads.filter((thread) => thread.kind === "agent").map((thread) => fallback.root(thread.thread_id))).size,
         continued: threads.reduce((sum, thread) => sum + (thread.kind === "agent" ? thread.continuations ?? 0 : 0), 0),
       },
       handoffs: session.handoffs.map((handoff) => ({ from: handoff.from_thread, to: handoff.to_thread, createdAt: handoff.created_at, confirmedAt: handoff.confirmed_at })),
@@ -1718,11 +1978,12 @@ export default async function plugin(bb: BbPluginApi) {
    */
   function sessionOf(airdId: string, threadId: string | null) {
     const handoffs = q.handoffs.all(airdId);
+    const sessions = threadId ? q.threadsByAird.all(airdId).filter((row) => fallback.root(row.thread_id) === fallback.root(threadId)).map((row) => row.thread_id) : [];
     return {
       handoffs,
       fromHere: threadId ? handoffs.find((handoff) => handoff.from_thread === threadId) ?? null : null,
       toHere: threadId ? handoffs.find((handoff) => handoff.confirmed_at === null && handoff.to_thread === threadId) ?? null : null,
-      slices: threadId ? q.sliceCount.get(airdId, threadId)?.n ?? 0 : 0,
+      slices: sessions.reduce((sum, id) => sum + (q.sliceCount.get(airdId, id)?.n ?? 0), 0),
     };
   }
 
@@ -1734,6 +1995,7 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   async function beginSlice(row: AirdRow, threadId: string, ref: string): Promise<{ allowed: boolean; text: string }> {
+    if (fallback.current(threadId) !== threadId) return { allowed: false, text: `Сессия продолжена в @thread:${fallback.current(threadId)}; здесь новые срезы запрещены` };
     let session = sessionOf(row.id, threadId);
     if (session.fromHere) {
       return { allowed: false, text: `Срез не начат: передача уже записана — работа продолжается в @thread:${session.fromHere.to_thread}. В этой сессии срезы больше не начинаются.` };
@@ -1798,7 +2060,16 @@ export default async function plugin(bb: BbPluginApi) {
       if (row.acceptance_branch) await migrateWorktreeToClone(row.acceptance_folder, row.acceptance_branch, /(^|\/)results\.json$/u);
       return row;
     }
-    codeRoot(row);
+    const changed = codeRepos(row);
+    if (changed.length > 1) {
+      // Several repositories: the suite gets a repository of its own next to the workspace copy, never inside it.
+      const folder = join(expandHome(config.worktreeRoot || "~/.aird-worktrees"), basename(resolve(row.folder)), `${row.slug}-acceptance`);
+      const branch = `aird/${row.slug}-acceptance`;
+      await ensureSuiteRepository(folder, branch);
+      q.setAcceptance.run(folder, branch, id);
+      publishChanged();
+      return q.airdById.get(id)!;
+    }
     const repo = reposOf(row)[0];
     // In a workspace the suite lives next to the one repository it judges.
     const info = repo
@@ -1835,6 +2106,14 @@ export default async function plugin(bb: BbPluginApi) {
       }
       if (pkg.workorders.some((wo) => wo.wave === scope.wave && (isDoneStatus(wo.status) || wo.status === "in_progress"))) {
         throw new Error("test-author должен стартовать до первого среза волны; текущая волна уже начата");
+      }
+      const changed = codeRepos(initial);
+      if (changed.length > 1) {
+        const base = JSON.stringify(await workspaceBase(changed.map((repo) => ({ rel: repo.rel, path: repo.path }))));
+        const row = await ensureAirdAcceptance(id);
+        q.insertAcceptanceWave.run(id, scope.wave, base);
+        publishChanged();
+        return row;
       }
       const base = await acceptanceBase(codeRoot(initial));
       const row = await ensureAirdAcceptance(id);
@@ -1935,13 +2214,15 @@ export default async function plugin(bb: BbPluginApi) {
       scope.hash += `:${wave.suite_commit}`;
       const priorBase = q.runsByAird.all(id).find((run) => run.kind === "baseline" && run.wave === scope.wave && run.scope_hash === scope.hash && run.status !== "running");
       if (kind === "wave" && priorBase?.status !== "passed") throw new Error("Сначала нужна успешная проверка Red-first этой волны (sf_run_acceptance({ baseline: true }))");
-      const targetRevision = kind === "wave" ? await deliveryRevision(target) : wave.base_ref;
+      const targetRevision = kind === "wave" ? await revisionOf(target, wave.base_ref) : wave.base_ref;
       const runId = `run_${createHash("sha1").update(`${id}\0${Date.now()}`).digest("hex").slice(0, 12)}`;
       q.insertRun.run(runId, id, kind, Date.now(), scope.wave, scope.hash, targetRevision);
       publishChanged();
       // Explicit inputs only: the registered suite, the recorded base, the registered implementation copy.
       const execute = () => kind === "baseline"
-        ? withBaselineCheckout(target, wave.base_ref, (checkout) => runSuite(suiteDirPath, checkout, 30 * 60_000, acceptanceAbort.signal))
+        ? isWorkspaceBase(wave.base_ref)
+          ? withWorkspaceBaseline(target, parseWorkspaceBase(wave.base_ref), (checkout) => runSuite(suiteDirPath, checkout, 30 * 60_000, acceptanceAbort.signal))
+          : withBaselineCheckout(target, wave.base_ref, (checkout) => runSuite(suiteDirPath, checkout, 30 * 60_000, acceptanceAbort.signal))
         : runSuite(suiteDirPath, target, 30 * 60_000, acceptanceAbort.signal);
       const done = execute().catch((error): SuiteRun => {
         bb.log.warn(`acceptance ${runId}: ${String(error)}`);
@@ -1949,7 +2230,7 @@ export default async function plugin(bb: BbPluginApi) {
       }).then(async (run) => {
         if (kind === "wave") {
           try {
-            if (targetRevision !== await deliveryRevision(target)) run.error = "Код изменился во время прогона; нужна повторная приёмка";
+            if (targetRevision !== await revisionOf(target, wave.base_ref)) run.error = "Код изменился во время прогона; нужна повторная приёмка";
           } catch { run.error = "Не удалось сверить код после прогона; нужна повторная приёмка"; }
         }
         const verdict = assessRun(run, scope.required, kind, new Set(scope.current.map((s) => s.id)), dirname(suiteDirPath));
@@ -1980,7 +2261,7 @@ export default async function plugin(bb: BbPluginApi) {
     const matching = runs.filter((run) => scope && run.wave === scope.wave && run.scope_hash === scope.hash && run.status !== "running");
     let targetRevision: string | null = null;
     if (registered?.target_dir) {
-      try { targetRevision = await deliveryRevision(registered.target_dir); } catch { /* No current source identity: old runs cannot pass. */ }
+      try { targetRevision = await revisionOf(registered.target_dir, registered.base_ref); } catch { /* No current source identity: old runs cannot pass. */ }
     }
     const lastWave = matching.find((run) => run.kind === "wave" && run.target_revision === targetRevision && targetRevision !== null);
     const lastBase = matching.find((run) => run.kind === "baseline");
@@ -2264,9 +2545,12 @@ export default async function plugin(bb: BbPluginApi) {
     const part = question.parts[0];
     const answer = part ? textAnswer(part, answers[part.id]?.selected ?? [], answers[part.id]?.freeText) : answers.q?.freeText ?? "Ок";
     q.closeQuestion.run("answered", answerSummary(question, answers) || answer.slice(0, 200), "plugin", Date.now(), id);
+    const targetThreadId = fallback.current(row.thread_id);
+    fallback.cancel(targetThreadId);
+    fallback.appendInput(targetThreadId, [{ type: "text", text: answer, mentions: [] }]);
     publishChanged();
     await bb.sdk.threads.send({
-      threadId: row.thread_id,
+      threadId: targetThreadId,
       input: [{ type: "text", text: answer, mentions: [] }],
       mode: "queue-if-active",
     } as never);
@@ -2460,6 +2744,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   /** The orchestrator thread a lifecycle tool was called from, or an error result. */
   function orchestratorOf(threadId: string | undefined) {
+    if (threadId && fallback.current(threadId) !== threadId) return null;
     const row = threadId ? q.threadById.get(threadId) : undefined;
     if (!row || row.kind !== "orchestrator") return null;
     const aird = q.airdById.get(row.aird_id);
@@ -2558,7 +2843,7 @@ export default async function plugin(bb: BbPluginApi) {
           "- Независимых агентов запускай пачкой, затем жди всех одним `sf_wait_agents`. Если вернулось «ещё работает» — вызови снова.",
           "- Следующий шаг прямо продолжает работу уже запущенного агента (та же проба или область, его временный код и выводы нужны дальше) — `sf_continue_agent({ threadId, task })` вместо нового агента: в task — что изменилось и что сделать. Свежий агент через `sf_spawn_agent` — для другой задачи или когда Factory откажет из-за большого контекста агента (от 300 тыс. токенов или 60%).",
           "- Пользователь разрешил запуск этих тредов, запуская AIRD из Software Factory: не спрашивай разрешения на каждый.",
-          "- Встроенный Agent/Task tool используй только если sf_spawn_agent вернул ошибку.",
+          "- Встроенный Agent/Task tool не используй. Его агента Factory не видит: не выбирает ему провайдера и модель (test-author должен уйти на другого провайдера), не учитывает его токены и не показывает его пользователю. Если sf_spawn_agent вернул ошибку — устрани причину или спроси пользователя через sf_ask_user.",
           "",
           "## Слепая приёмка",
           "Если в 09-dod.md есть строки `Acceptance Scenarios`: на pre-flight волны запусти `sf_spawn_agent({ role: \"test-author\", ... })` с брифом из строк сценариев и названных разделов контракта — он работает в отдельной worktree и не видит реализацию. Ты не открываешь его файлы и не просишь код тестов. Он коммитит набор и регистрирует его через `sf_register_suite` — Factory запоминает папку набора, commit, базу и рабочую копию реализации; пути сам не вычисляй и не передавай. После его отчёта — `sf_run_acceptance({ baseline: true })` (новые сценарии падают или имеют note: pre-existing: <причина>; предыдущие проходят; пропуски и отсутствие результатов блокируют гейт), после интеграции волны — `sf_run_acceptance()`: вернутся только вердикты «ожидалось / получено». Упавший сценарий — дефект кода по умолчанию; оспорить можно только ссылкой на текст пакета через `reviewer`. Набор никогда не запускай сам (run.sh, тест-раннер по acceptance/) и не открывай его файлы: если sf_run_acceptance вернул «набор не выполнился» — запусти test-author с текстом ошибки; если ошибка в окружении плагина — sf_ask_user. Свои unit-тесты этот гейт не закрывают. База каждой волны фиксируется при первом запуске автора до первого среза; текущая active_wave обязательна. Новый автор той же волны использует прежнюю базу. Для механических правок используй роль docs, не general-purpose.",
@@ -2739,6 +3024,7 @@ export default async function plugin(bb: BbPluginApi) {
           defaultSource: wanted.defaults.source,
           effectiveModel: effective.model,
           effectiveEffort: effective.effort,
+          reserve: reserveFor("orchestrator", stage),
         });
       }
       const definitions = listAgentDefinitions();
@@ -2774,6 +3060,7 @@ export default async function plugin(bb: BbPluginApi) {
           effectiveEffort: effective.effort,
           skills: wanted.definition?.skills ?? [],
           canWrite: wanted.definition?.canWrite ?? true,
+          reserve: reserveFor("agent", name),
         });
       }
       return {
@@ -2783,13 +3070,15 @@ export default async function plugin(bb: BbPluginApi) {
         roles,
       };
     },
-    agent_override_set: async ({ role, provider, model, effort }) => {
+    agent_override_set: async ({ role, provider, model, effort, reserve }) => {
+      await saveReserve("agent", role, reserve);
       if (!provider && !model && !effort) q.clearOverride.run(role);
       else q.setOverride.run(role, provider || null, model || null, effort || null);
       publishChanged();
       return { ok: true };
     },
-    orchestrator_set: async ({ stage, provider, model, effort }) => {
+    orchestrator_set: async ({ stage, provider, model, effort, reserve }) => {
+      await saveReserve("orchestrator", stage, reserve);
       if (!provider && !model && !effort) q.clearOrchestrator.run(stage);
       else q.setOrchestrator.run(stage, provider || null, model || null, effort || null);
       publishChanged();
@@ -2863,6 +3152,7 @@ export default async function plugin(bb: BbPluginApi) {
       return detail;
     },
     aird_thread: async ({ id, threadId }) => {
+      threadId = fallback.current(threadId);
       const row = q.threadById.get(threadId);
       if (!row || row.aird_id !== id) throw new Error("Тред не принадлежит этому AIRD");
       let status = "deleted";
@@ -2951,6 +3241,7 @@ export default async function plugin(bb: BbPluginApi) {
       return { threadId: thread.id };
     },
     aird_continue: async ({ id, threadId, message }) => {
+      threadId = fallback.current(threadId);
       const row = q.threadById.get(threadId);
       if (!row || row.aird_id !== id) throw new Error("Тред не принадлежит этому AIRD");
       const text =
@@ -2969,6 +3260,8 @@ export default async function plugin(bb: BbPluginApi) {
         q.insertHandoff.run(id, threadId, fresh.id, Date.now());
         return { ok: true };
       }
+      fallback.cancel(threadId);
+      fallback.appendInput(threadId, [{ type: "text", text, mentions: [] }]);
       await bb.sdk.threads.send({
         threadId,
         input: [{ type: "text", text, mentions: [] }],

@@ -67,6 +67,28 @@ Failed scenarios are code defects unless a restricted reviewer rules otherwise
 against the package text. Follow the six-field report format from the task;
 the implementer must not inspect the suite. Keep its branch separate from delivery.
 
+## Reserve models
+
+The role settings and discovery/delivery orchestrator settings may contain one
+reserve provider/model/effort, disabled by default. Factory owns automatic
+recovery for those tasks: a structured rate limit switches immediately;
+transient availability failures get two delayed retries before switching.
+Authorization, billing, spending controls, policy and unknown failures require
+a user decision. Never start your own retry or duplicate agent while Factory
+reports recovery pending. Keep calling `sf_wait_agents` with the original ids:
+it follows provider transfers and returns the current session's report. Use
+`sf_continue_agent` with the original id as well. A blocked recovery is a
+user decision in the inbox, not a successful agent report.
+
+A provider transfer preserves the task's working environment, role, brief,
+attachments, workorder links, and slice budget. The old thread is superseded;
+do not continue work in it. The new role receives only its own previous session
+history; test-author isolation still applies. Before resuming, inspect files
+and the results of unfinished operations and do not repeat completed actions.
+An uncertain dispatch after a crash stops for inspection instead of being
+blindly submitted twice. The current task stays on its reserve; a newly
+spawned task starts with the configured primary model.
+
 ## Agent threads
 
 A thread started by `sf_spawn_agent` is one role. Do the task from its first

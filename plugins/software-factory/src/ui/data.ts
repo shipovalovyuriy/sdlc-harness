@@ -189,6 +189,17 @@ export const THREAD_STATUS_LABELS: Record<string, string> = {
   deleted: "удалён",
 };
 
+/** Tokens as people read them: 58 млн, 850 тыс. */
+export function formatTokens(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "н/д";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1).replace(".", ",")} млн`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)} тыс.`;
+  return String(value);
+}
+
+/** An agent past this many tokens is the one draining the provider's limit. */
+export const HEAVY_AGENT_TOKENS = 20_000_000;
+
 export function relativeTime(value: string | number | null): string {
   if (value === null || value === "") return "—";
   const time = typeof value === "number" ? value : Date.parse(value);

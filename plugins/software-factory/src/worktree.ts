@@ -479,3 +479,81 @@ export async function withBaselineCheckout<T>(folder: string, base: string, run:
     finally { rmSync(temp, { recursive: true, force: true }); }
   }
 }
+
+// ------------------------------------------------------------ workspace acceptance
+// A workspace of several repositories: the suite lives in a repository of its
+// own, the wave's base is one commit per changed repository, and the baseline
+// run gets a temporary copy of the workspace with each repository at its base.
+
+/** A suite repository of its own, outside the delivery workspace. */
+export async function ensureSuiteRepository(path: string, branch: string): Promise<void> {
+  mkdirSync(path, { recursive: true });
+  if (existsSync(join(path, ".git"))) return;
+  await git(path, ["init", "-q", "-b", branch]);
+}
+
+export type WorkspaceBase = Record<string, string>;
+
+export function isWorkspaceBase(base: string | null | undefined): boolean {
+  return typeof base === "string" && base.trim().startsWith("{");
+}
+
+export function parseWorkspaceBase(base: string): WorkspaceBase {
+  return JSON.parse(base) as WorkspaceBase;
+}
+
+/** The base of every changed repository; each must be clean outside the AIRD package. */
+export async function workspaceBase(repos: { rel: string; path: string }[]): Promise<WorkspaceBase> {
+  const base: WorkspaceBase = {};
+  for (const repo of [...repos].sort((a, b) => a.rel.localeCompare(b.rel))) {
+    try {
+      base[repo.rel] = await acceptanceBase(repo.path);
+    } catch (error) {
+      throw new Error(`${repo.rel}: ${String(error).replace(/^Error: /u, "")}`);
+    }
+  }
+  return base;
+}
+
+/** One identity for the implementation across all changed repositories. */
+export async function workspaceRevision(root: string, base: WorkspaceBase): Promise<string> {
+  const hash = createHash("sha256");
+  for (const rel of Object.keys(base).sort()) hash.update(rel).update("\0").update(await deliveryRevision(join(root, rel))).update("\0");
+  return hash.digest("hex");
+}
+
+/** Run against a temporary copy of the workspace where each changed repository is at its base commit. */
+export async function withWorkspaceBaseline<T>(root: string, base: WorkspaceBase, run: (target: string) => Promise<T>): Promise<T> {
+  const temp = mkdtempSync(join(tmpdir(), "aird-baseline-ws-"));
+  const checkout = join(temp, "workspace");
+  const rels = Object.keys(base);
+  const created: { repo: string; path: string }[] = [];
+  // Mirror the directories on the way to each repository; everything else is a link to the workspace.
+  const mirror = (rel: string) => {
+    const source = rel ? join(root, rel) : root;
+    const target = rel ? join(checkout, rel) : checkout;
+    mkdirSync(target, { recursive: true });
+    for (const name of readdirSync(source)) {
+      const child = rel ? `${rel}/${name}` : name;
+      if (rels.includes(child)) continue;
+      if (rels.some((repo) => repo.startsWith(`${child}/`))) mirror(child);
+      else symlinkSync(join(source, name), join(target, name));
+    }
+  };
+  try {
+    mirror("");
+    for (const rel of rels) {
+      const repo = join(root, rel);
+      const path = join(checkout, rel);
+      mkdirSync(dirname(path), { recursive: true });
+      await git(repo, ["worktree", "add", "--detach", path, base[rel]!]);
+      created.push({ repo, path });
+      const modules = join(repo, "node_modules");
+      if (!existsSync(join(path, "node_modules")) && isDirectory(modules)) symlinkSync(modules, join(path, "node_modules"));
+    }
+    return await run(checkout);
+  } finally {
+    for (const item of created) await tryGit(item.repo, ["worktree", "remove", "--force", item.path]);
+    rmSync(temp, { recursive: true, force: true });
+  }
+}

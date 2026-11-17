@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useBbNavigate, useRealtime } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import type { AgentRole, AgentsCatalog, OrchestratorConfig, ProviderOption } from "../contract";
+import type { AgentRole, AgentsCatalog, OrchestratorConfig, ProviderOption, ReserveModel } from "../contract";
 import { CHANGED, errorText, shortPath, useFactoryRpc } from "./data";
 import { Chip, EmptyState, ErrorText, Pill } from "./kit";
 
@@ -171,6 +171,8 @@ function OrchestratorCard({ config, catalog, onChanged }: { config: Orchestrator
         <Chip>effort: {config.effectiveEffort ?? "по умолчанию"}</Chip>
       </div>
       {config.defaultSource ? <p className="text-[11px] text-muted-foreground">Умолчания из {shortPath(config.defaultSource)}</p> : null}
+      <ReserveControls value={config.reserve} catalog={catalog} onChanged={onChanged}
+        save={(reserve) => rpc.call("orchestrator_set", { stage: config.stage, provider: config.overrideProvider, model: config.overrideModel, effort: config.overrideEffort, reserve })} />
       <ErrorText>{error}</ErrorText>
     </div>
   );
@@ -299,7 +301,62 @@ function RoleCard({ role, catalog, onChanged }: { role: AgentRole; catalog: Agen
           ))}
         </div>
       ) : null}
+      <ReserveControls value={role.reserve} catalog={catalog} onChanged={onChanged}
+        save={(reserve) => rpc.call("agent_override_set", { role: role.name, provider: role.overrideProvider, model: role.overrideModel, effort: role.overrideEffort, reserve })} />
       <ErrorText>{error}</ErrorText>
     </div>
+  );
+}
+
+function ReserveControls({ value, catalog, save, onChanged }: {
+  value: ReserveModel | null;
+  catalog: AgentsCatalog;
+  save: (reserve: ReserveModel | null) => Promise<unknown>;
+  onChanged: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const provider = catalog.providers.find((item) => item.id === value?.provider);
+  const selected = value ? `${value.provider}::${value.model}` : "";
+  const offered = !value || provider?.models.some((model) => model.id === value.model);
+  const change = async (next: ReserveModel | null) => {
+    setSaving(true);
+    setError(null);
+    try { await save(next); onChanged(); }
+    catch (cause) { setError(errorText(cause)); }
+    finally { setSaving(false); }
+  };
+  return (
+    <fieldset disabled={saving} aria-busy={saving} className="min-w-0 space-y-2 border-t border-border pt-3">
+      <legend className="px-1 text-xs font-semibold">Запасная модель</legend>
+      <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-2">
+        <label className="grid min-w-0 gap-1 text-xs">
+          <span className="text-muted-foreground">Провайдер и модель</span>
+          <select value={selected} className={selectClass} onChange={(event) => {
+            const [providerId, ...model] = event.target.value.split("::");
+            void change(providerId ? { provider: providerId, model: model.join("::"), effort: null } : null);
+          }}>
+            <option value="">Выключена</option>
+            {!offered && value ? <option value={selected}>{value.provider} / {value.model} — недоступна</option> : null}
+            {catalog.providers.map((item) => <optgroup key={item.id} label={item.name}>
+              {item.models.map((model) => <option key={model.id} value={`${item.id}::${model.id}`}>{model.label} ({model.id})</option>)}
+            </optgroup>)}
+          </select>
+        </label>
+        <label className="grid min-w-0 gap-1 text-xs">
+          <span className="text-muted-foreground">Effort запасной</span>
+          <select value={value?.effort ?? ""} disabled={!value || saving} className={selectClass}
+            onChange={(event) => { if (value) void change({ ...value, effort: event.target.value || null }); }}>
+            <option value="">По умолчанию</option>
+            {value ? effortsFor(provider, value.model).map((effort) => <option key={effort} value={effort}>{effort}</option>) : null}
+          </select>
+        </label>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {value ? "При лимите — переключение сразу; при временном сбое — после двух повторов. При общем лимите аккаунта поможет другой провайдер." : "Включи, чтобы агент продолжал задачу при лимите или недоступности основной модели."}
+      </p>
+      {saving ? <span role="status" className="text-xs text-muted-foreground">Сохраняю…</span> : null}
+      <ErrorText>{error}</ErrorText>
+    </fieldset>
   );
 }

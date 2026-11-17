@@ -279,8 +279,12 @@ export function agentPrompt(options: {
   materials?: string[];
   /** How many of them are attached to this message natively. */
   attachedCount?: number;
+  /** Delivery implementation workers: tool actions before Factory asks for a checkpoint. */
+  actionBudget?: number | null;
+  /** The workorder's `docs_to_read` sections, already cut out of the package (markdown). */
+  sections?: string;
 }): string {
-  const { role, definition, task, slug, folder, packagePath, orchestratorThreadId, model, effort, materials = [], attachedCount = 0 } = options;
+  const { role, definition, task, slug, folder, packagePath, orchestratorThreadId, model, effort, materials = [], attachedCount = 0, actionBudget = null, sections = "" } = options;
   const lines = [
     `Ты — агент \`${role}\` в AIRD «${slug}» (Software Factory). Тебя запустил оркестратор @thread:${orchestratorThreadId}.`,
     "",
@@ -289,7 +293,7 @@ export function agentPrompt(options: {
     lines.push("## Роль (из определения агента)", "", definition.prompt, "");
     if (definition.skills.length > 0) {
       lines.push(
-        `Скиллы роли: ${definition.skills.map((skill) => `\`/${skill}\``).join(", ")}. Загружай их, когда задача их касается (для ревью и реализации — до начала работы).`,
+        `Скиллы роли: ${definition.skills.map((skill) => `\`/${skill}\``).join(", ")}. Загружай их, когда задача их касается (для ревью и реализации — до начала работы). Справочники скилла (\`references/\`) открывай по одному: общий и тот, что про язык и слой изменения (например \`go.md\`, \`backend.md\`), — не все подряд.`,
         "",
       );
     }
@@ -315,10 +319,24 @@ export function agentPrompt(options: {
         ]
       : []),
     "",
+    "## Экономия контекста",
+    "",
+    "Всё, что ты прочитал, вывел и обдумал, отправляется модели заново на каждом следующем шаге. Поэтому:",
+    "- ищи `rg -n` по имени, затем читай `sed -n` окном до 80 строк вокруг найденного; не выводи файлы целиком (`cat`, `sed` на сотни строк);",
+    "- документы пакета — только разделы, названные в задаче и в `docs_to_read`; из справочников скиллов — только файл твоего языка или области;",
+    "- длинный вывод (тесты, сборка, логи, диффы) — в файл, на экран хвост `tail -n 40` или счётчик;",
+    "- не перечитывай то, что уже прочитал в этом треде.",
+    ...(actionBudget
+      ? [
+          `- Бюджет: около ${actionBudget} действий (команд, чтений, правок). Если задача больше, Factory пришлёт сигнал: тогда закоммить то, что проходит тесты, запиши остаток в \`evidence/<WO>-progress.md\` и заверши с пометкой «частично» — остаток сделает свежий воркер по записке.`,
+        ]
+      : []),
+    "",
     "## Задача от оркестратора",
     "",
     task.trim(),
     "",
+    ...(sections ? [sections, ""] : []),
     "## Ответ",
     "",
     "Следуй формату отчёта из задачи. Если он не задан — короткий отчёт для оркестратора: вердикт, ключевые факты, пути к прочитанным или записанным файлам. Без пересказа файлов целиком.",

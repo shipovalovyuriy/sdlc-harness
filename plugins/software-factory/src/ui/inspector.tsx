@@ -17,6 +17,7 @@ import {
   agentActivity,
   errorText,
   isRunningThread,
+  formatTokens,
   relativeTime,
   shortPath,
   threadTone,
@@ -563,7 +564,7 @@ function CommitInspector({ data, sha }: { data: AirdDetail; sha: string }) {
 
 function ThreadInspector({ data, threadId, initialTab }: { data: AirdDetail; threadId: string; initialTab: "session" | "summary" }) {
   const [tab, setTab] = useState<"session" | "summary">(initialTab);
-  const thread = data.threads.find((item) => item.threadId === threadId) ?? null;
+  const thread = data.threads.find((item) => item.threadId === threadId || item.logicalThreadId === threadId) ?? null;
   const navigate = useBbNavigate();
   return (
     <div className="flex min-h-full flex-col gap-3">
@@ -633,6 +634,7 @@ function ThreadSummary({ data, threadId }: { data: AirdDetail; threadId: string 
         {thread?.provider ? <Chip>{thread.provider}</Chip> : null}
         {thread?.model ? <Chip mono>{thread.model}</Chip> : <Chip>модель по умолчанию</Chip>}
         {thread?.effort ? <Chip>effort: {thread.effort}</Chip> : null}
+        {thread?.tokens ? <Chip>{formatTokens(thread.tokens)} токенов</Chip> : null}
         {thread ? <span className="text-xs text-muted-foreground">запущен {relativeTime(thread.createdAt)}</span> : null}
       </div>
       {thread && (thread.refs.length > 0 || thread.stageNode) ? (
@@ -647,6 +649,24 @@ function ThreadSummary({ data, threadId }: { data: AirdDetail; threadId: string 
             </button>
           ) : null}
         </div>
+      ) : null}
+      {thread?.recovery ? <div role="status" className="rounded-lg border border-border p-3 text-xs">{thread.recovery.reason}</div> : null}
+      {(thread?.sessions?.length ?? 0) > 1 ? (
+        <Block title="История моделей и сессий">
+          <div className="divide-y divide-border rounded-lg border border-border">
+            {thread!.sessions!.map((session, index) => (
+              <div key={`${session.threadId}-${index}`} className="space-y-1 p-3 text-xs">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Chip>{index === 0 ? "Основная" : "Запасная"}</Chip>
+                  <Chip>{session.provider ?? "провайдер по умолчанию"}</Chip>
+                  <Chip mono>{session.model ?? "модель по умолчанию"}</Chip>
+                  <button type="button" className="ml-auto cursor-pointer text-muted-foreground hover:underline" onClick={() => navigate.toThread(session.threadId)}>Открыть сессию</button>
+                </div>
+                {session.reason ? <p className="text-muted-foreground">{session.reason}</p> : null}
+              </div>
+            ))}
+          </div>
+        </Block>
       ) : null}
       {thread?.task ? (
         <Block title="Бриф от оркестратора">

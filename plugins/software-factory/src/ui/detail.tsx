@@ -13,6 +13,8 @@ import {
   THREAD_STATUS_LABELS,
   WO_STATUS_LABELS,
   errorText,
+  formatTokens,
+  HEAVY_AGENT_TOKENS,
   relativeTime,
   shortPath,
   statusLabel,
@@ -468,6 +470,22 @@ function OverviewTab({ data, onTab, onMetrics }: { data: AirdDetail; onTab: (tab
                       агентов: {data.session.agents.started} новых · {data.session.agents.continued} продолжений
                     </span>
                   ) : null}
+                  {(data.session.limits ?? []).map((limit) => (
+                    <Pill key={limit.provider} tone={limit.status === "blocked" ? "bad" : limit.status === "warning" ? "warn" : "neutral"}>
+                      <span title={`Последнее сообщение провайдера о лимите подписки: ${new Date(limit.reportedAt).toLocaleString()}`}>
+                        {limit.provider}: {limit.status === "blocked" ? "лимит исчерпан" : limit.status === "warning" ? "лимит близко" : "лимит в норме"}
+                        {limit.resetsAt && limit.status !== "allowed" ? ` · сброс ${new Date(limit.resetsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : ""}
+                      </span>
+                    </Pill>
+                  ))}
+                  {data.session.tokens && data.session.tokens.total > 0 ? (
+                    <span className="text-muted-foreground" title="Сумма токенов всех тредов AIRD по провайдерам">
+                      токенов: {formatTokens(data.session.tokens.total)}
+                      {data.session.tokens.byProvider.length > 1
+                        ? ` (${data.session.tokens.byProvider.map((part) => `${part.provider} ${formatTokens(part.tokens)}`).join(" · ")})`
+                        : ""}
+                    </span>
+                  ) : null}
                   {data.session.handoffs.length > 0 ? (
                     <span className="text-muted-foreground">
                       передач: {data.session.handoffs.length}
@@ -867,6 +885,14 @@ function AgentRow({ thread, depth }: { thread: AgentThread; depth: number }) {
         {thread.provider ? <Chip>{thread.provider}</Chip> : null}
         {thread.model ? <Chip mono>{thread.model}</Chip> : <Chip>модель по умолчанию</Chip>}
         {thread.effort ? <Chip>effort: {thread.effort}</Chip> : null}
+        {thread.tokens ? (
+          <Pill tone={thread.tokens >= HEAVY_AGENT_TOKENS ? "warn" : "neutral"}>
+            <span title="Токены треда: каждый шаг заново отправляет весь накопленный контекст">{formatTokens(thread.tokens)} токенов</span>
+          </Pill>
+        ) : null}
+        {thread.budgetSignalAt ? <Pill tone="info">бюджет исчерпан — завершает с запиской</Pill> : null}
+        {(thread.sessions?.length ?? 0) > 1 ? <Pill tone="warn">запасная · {thread.sessions!.length} сессии</Pill> : null}
+        {thread.recovery ? <span className="text-xs text-muted-foreground">{thread.recovery.reason}</span> : null}
         {thread.skills.map((skill) => (
           <Chip key={skill} mono>
             /{skill}

@@ -186,6 +186,22 @@ export const agentThreadSchema = z.object({
   refs: z.array(z.string()),
   stageNode: z.string().nullable(),
   task: z.string().nullable(),
+  logicalThreadId: z.string().optional(),
+  recovery: z.object({
+    status: z.enum(["pending", "dispatching", "blocked"]),
+    reason: z.string(),
+  }).nullable().optional(),
+  sessions: z.array(z.object({
+    threadId: z.string(),
+    provider: z.string().nullable(),
+    model: z.string().nullable(),
+    reason: z.string().nullable(),
+    at: z.number(),
+  })).optional(),
+  /** Tokens the agent's thread has used so far (every step re-sends its context), null when not reported. */
+  tokens: z.number().nullish(),
+  /** When Factory told this delivery worker its action budget was spent. */
+  budgetSignalAt: z.number().nullish(),
 });
 export type AgentThread = z.infer<typeof agentThreadSchema>;
 
@@ -260,6 +276,10 @@ export const airdDetailSchema = z.object({
     contextPct: z.number().nullable(),
     /** Agents launched for this AIRD and follow-ups sent to them instead of new agents. */
     agents: z.object({ started: z.number(), continued: z.number() }),
+    /** Tokens of all threads of this AIRD, by provider. */
+    tokens: z.object({ total: z.number(), byProvider: z.array(z.object({ provider: z.string(), tokens: z.number() })) }).optional(),
+    /** The latest subscription-limit state each provider reported (allowed / warning / blocked) and when its window resets. */
+    limits: z.array(z.object({ provider: z.string(), status: z.string(), window: z.string().nullable(), resetsAt: z.number().nullable(), reportedAt: z.number() })).optional(),
     handoffs: z.array(z.object({ from: z.string(), to: z.string(), createdAt: z.number(), confirmedAt: z.number().nullable() })),
   }),
 });
@@ -312,6 +332,13 @@ export const roleDefinitionSchema = z.object({
 });
 export type RoleDefinition = z.infer<typeof roleDefinitionSchema>;
 
+export const reserveModelSchema = z.object({
+  provider: z.string().trim().min(1).max(80),
+  model: z.string().trim().min(1).max(120),
+  effort: z.string().trim().min(1).max(40).nullable(),
+});
+export type ReserveModel = z.infer<typeof reserveModelSchema>;
+
 export const agentRoleSchema = z.object({
   name: z.string(),
   stages: z.array(z.enum(["discovery", "delivery"])),
@@ -326,6 +353,7 @@ export const agentRoleSchema = z.object({
   effectiveEffort: z.string().nullable(),
   skills: z.array(z.string()),
   canWrite: z.boolean(),
+  reserve: reserveModelSchema.nullable(),
 });
 export type AgentRole = z.infer<typeof agentRoleSchema>;
 
@@ -340,6 +368,7 @@ export const orchestratorConfigSchema = z.object({
   defaultSource: z.string(),
   effectiveModel: z.string().nullable(),
   effectiveEffort: z.string().nullable(),
+  reserve: reserveModelSchema.nullable(),
 });
 export type OrchestratorConfig = z.infer<typeof orchestratorConfigSchema>;
 
@@ -631,6 +660,7 @@ export const rpcContract = defineRpcContract({
       provider: z.string().trim().max(80).nullable(),
       model: z.string().trim().max(120).nullable(),
       effort: z.string().trim().max(40).nullable(),
+      reserve: reserveModelSchema.nullable().optional(),
     }),
     output: z.object({ ok: z.boolean() }),
   },
@@ -640,6 +670,7 @@ export const rpcContract = defineRpcContract({
       provider: z.string().trim().max(80).nullable(),
       model: z.string().trim().max(120).nullable(),
       effort: z.string().trim().max(40).nullable(),
+      reserve: reserveModelSchema.nullable().optional(),
     }),
     output: z.object({ ok: z.boolean() }),
   },
