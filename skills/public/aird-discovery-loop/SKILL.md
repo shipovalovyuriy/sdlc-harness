@@ -547,6 +547,50 @@ path. A package that adds no new creation path writes `None.` with the reason.
 The validator warns — fatal under the `--strict` run discovery must use — when
 `06-data-models.md` exists and the TRD lacks this section or leaves it empty.
 
+**An asynchronous boundary lists where it can stop halfway.** When a flow
+crosses an outbox, a queue, a worker, a projector, a webhook or an external
+API, a crash or a race lands between two of its steps: after X is committed
+and before Y is sent or stored. A list of states and failures does not find
+these points. A design can name `reserved`, `failed` and `freed` and still
+leave a reservation nobody recovers after a restart, a cancel that finishes
+before a delayed create lands, and a status the other side reports that this
+side never handles (eval `transition-closure-in-final-review`). `04-trd.md`
+therefore carries a `## Transition Closure` section (a contract heading the
+validator reads) with one row per point, written by walking the flow step by
+step rather than from the state list:
+
+```markdown
+## Transition Closure
+
+| Boundary | After / before | State left behind | Recovery owner | Edge case |
+|---|---|---|---|---|
+| gateway -> asset API | after `reserved` is committed, before CreateAsset is sent | reservation, no remote asset | WO-02: an expired lease releases it | EC-11 |
+| gateway -> asset API | after CreateAsset is sent, before its result is stored | reservation, remote asset may exist | WO-02: find by name, adopt or delete; never create twice | EC-12 |
+| cancel vs in-flight create | after DELETE returns 404, before the delayed create lands | row freed, live remote asset | WO-01: a closed id refuses a late create | EC-13 |
+```
+
+Four questions close the same class and go into the table or the TRD next to
+it:
+
+- every status the other side can report has a transition on this side (a
+  `lost` nobody handles keeps showing "verified");
+- a hook the design names as the trigger is shown to be called on that path in
+  today's code, with file and line (a hook that only protects a file from
+  retention never fires on delete);
+- a human decision keyed on an entity that can be deleted, merged or restored
+  says what happens to the decision then;
+- every outcome the algorithm can produce has a representation in the data
+  model, and no `CHECK` forbids it.
+
+Every row names the workorder that owns the recovery and an `EC-NN` declared in
+`01-prd.md`, so the `Edge Case -> Gate Mapping` puts a test on it; the test
+stops the process or delays the other side at exactly that point. A package
+with no asynchronous or external boundary writes `None.` with the reason. The
+validator asks for the section in `deep` packages and in packages with a `job`
+or `external` workorder. A missing or empty answer, or a row without an
+existing `WO-` owner or a declared `EC-`, is a warning, fatal under the
+`--strict` run discovery must use.
+
 ### 7. Implementation Plan And Quality Gates
 
 Produce:
@@ -950,6 +994,15 @@ call:
    rule's keywords across the package; two statements that differ in scope or
    condition are a blocking finding, decided before acceptance rather than by
    the delivery reviewer (eval `one-source-per-rule`).
+8. **Transition closure.** The reviewer walks every asynchronous or external
+   boundary step by step on its own and compares the points it finds with the
+   TRD `Transition Closure` table. A point missing from the table, a recovery
+   owner whose workorder does not implement that recovery, a status of the
+   other side with no handling, a hook nobody calls on that path, a human
+   decision lost on delete or restore, or an outcome the data model cannot
+   store is a blocking finding. A race is stated as one concrete schedule of
+   events, so the fix can be tested against it (eval
+   `transition-closure-in-final-review`).
 
 These are the final allowed blocking `F-` IDs. After all registered findings
 meet their original closure criteria, fetch the target base again and record

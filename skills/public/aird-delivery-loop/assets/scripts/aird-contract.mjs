@@ -264,6 +264,9 @@ export const BASELINE_RULE_SINCE = '2026-10-02T00:00:00.000Z';
 // Packages with a wave accepted before IMPLICIT_PROPERTIES_RULE_SINCE keep the
 // TRD contract they were accepted under (no `Implicit Properties` section).
 export const IMPLICIT_PROPERTIES_RULE_SINCE = '2026-10-10T00:00:00.000Z';
+// Packages with a wave accepted before TRANSITION_CLOSURE_RULE_SINCE keep the
+// TRD contract they were accepted under (no `Transition Closure` section).
+export const TRANSITION_CLOSURE_RULE_SINCE = '2026-11-17T09:00:00.000Z';
 export const SERVICE_RUNTIME_PROFILES = new Set(['service', 'database', 'migration', 'api', 'job', 'external']);
 const EMPTY_CELL = /^(?:|-|—|–|n\/a|tbd|todo)$/i;
 

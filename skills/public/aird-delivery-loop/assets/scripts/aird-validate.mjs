@@ -11,6 +11,7 @@ import {
   CONSUMES_PRODUCERS,
   EXECUTABLE_KINDS,
   IMPLICIT_PROPERTIES_RULE_SINCE,
+  TRANSITION_CLOSURE_RULE_SINCE,
   NON_IMPLEMENTATION_KINDS,
   RUNTIME_PROFILES,
   SURFACES,
@@ -1037,6 +1038,45 @@ if (filesOnDisk.has('06-data-models.md')) {
     : /(^|[^\p{L}])(none|нет)([^\p{L}]|$)/iu.test(body);
   if (!acceptedEarlier && !answered) {
     warn('04-trd.md has no `## Implicit Properties Of Existing Entities` answer while 06-data-models.md exists; list the properties existing rows silently guarantee, who relies on them (including the previous build on rollback) and what a new creation path produces, or write `None.` with the reason');
+  }
+}
+
+// An asynchronous or external boundary stops halfway: after X is committed and
+// before Y is sent or stored. The TRD lists those points, each with the
+// workorder that owns the recovery and a declared edge case a gate selects
+// (P-2026-09-30-transition-closure). Asked of deep packages and of packages
+// whose live workorders run a job or call an external service; `None.` with the
+// reason answers it. Warning, fatal under the --strict run discovery uses;
+// packages with a wave accepted before TRANSITION_CLOSURE_RULE_SINCE keep their
+// contract.
+{
+  const crossesBoundary = workorders.some((workorder) =>
+    EXECUTABLE_KINDS.has(workorder.kind)
+    && workorder.status !== 'deferred'
+    && workorder.runtimeProfiles.some((profile) => profile === 'job' || profile === 'external'));
+  const acceptedEarlier = Object.values(manifest?.waves ?? {})
+    .some((wave) => wave?.accepted_at && wave.accepted_at < TRANSITION_CLOSURE_RULE_SINCE);
+  if ((state.discovery_profile === 'deep' || crossesBoundary) && !acceptedEarlier) {
+    const body = section(read(join(packageDir, '04-trd.md')), 'Transition Closure');
+    const rows = body.includes('|') ? parsePipeTable(body).filter((cells) => cells.some((cell) => cell !== '')) : [];
+    const answered = rows.length > 0 || (!body.includes('|') && /(^|[^\p{L}])(none|нет)([^\p{L}]|$)/iu.test(body));
+    if (!answered) {
+      warn('04-trd.md has no `## Transition Closure` answer while the package is deep or has a job/external workorder; list each point where an asynchronous or external boundary can stop (after X is committed, before Y), the state left behind, the workorder that owns the recovery and its EC- edge case, or write `None.` with the reason');
+    }
+    const knownWorkorders = new Set(workorders.map((workorder) => workorder.id));
+    const declaredEdgeCases = new Set(collectIds(read(join(packageDir, '01-prd.md')), /\bEC-\d+/g));
+    rows.forEach((cells, index) => {
+      const line = cells.join(' | ');
+      const label = `04-trd.md Transition Closure row ${index + 1}`;
+      const owners = collectIds(line, /\bWO-\d+/g);
+      const edgeCases = collectIds(line, /\bEC-\d+/g);
+      if (!owners.some((id) => knownWorkorders.has(id))) {
+        warn(`${label} names no existing workorder that owns the recovery${owners.length ? ` (${owners.join(', ')} not found)` : ''}`);
+      }
+      if (!edgeCases.some((id) => declaredEdgeCases.has(id))) {
+        warn(`${label} names no EC- edge case declared in 01-prd.md${edgeCases.length ? ` (${edgeCases.join(', ')} not declared)` : ''}; without one no gate tests this point`);
+      }
+    });
   }
 }
 

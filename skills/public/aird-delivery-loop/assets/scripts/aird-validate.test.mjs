@@ -1140,6 +1140,56 @@ wave_outcomes:
     assert(!has(run(packageDir)), 'a package with a wave accepted before the rule keeps its contract');
   }
 
+  // --- Transition closure of asynchronous boundaries --------------------------
+
+  {
+    const message = 'Transition Closure';
+    const found = (result) => [...result.parsed.errors, ...result.parsed.warnings].filter((text) => text.includes(message));
+    const has = (result) => found(result).length > 0;
+    const { packageDir } = makeRepository('transition-closure', [{ id: 'WO-01' }]);
+    assert(!has(run(packageDir)), 'a standard package without job/external workorders must not be asked for transition closure');
+
+    writeFileSync(join(packageDir, 'workorders', 'WO-01.md'), workorderText({ id: 'WO-01', runtimeProfiles: ['external'] }));
+    assertResult('an external workorder with no transition-closure answer is surfaced', run(packageDir), 0, message);
+    assertResult('and it is fatal under --strict', run(packageDir, ['--strict']), 1, message);
+
+    writeFileSync(join(packageDir, 'workorders', 'WO-01.md'), workorderText({ id: 'WO-01' }));
+    setState(packageDir, { profile: 'deep' });
+    assert(has(run(packageDir)), 'a deep package is asked even without job/external workorders');
+
+    writeFileSync(join(packageDir, '04-trd.md'), '# TRD\n\n## Transition Closure\n\n## Rollout\n');
+    assert(has(run(packageDir)), 'an empty section is not an answer');
+
+    writeFileSync(join(packageDir, '04-trd.md'), '# TRD\n\n## Transition Closure\n\nNone. Every step is one synchronous transaction.\n');
+    assert(!has(run(packageDir)), 'an explicit none is an answer');
+
+    writeFileSync(join(packageDir, '01-prd.md'), `${baselineContent['01-prd.md']}\n| Edge case | Expected |\n|---|---|\n| EC-01 | crash after reserve is recovered |\n`);
+    writeFileSync(join(packageDir, '04-trd.md'), [
+      '# TRD', '', '## Transition Closure', '',
+      '| Boundary | After / before | State left behind | Recovery owner | Edge case |',
+      '|---|---|---|---|---|',
+      '| gateway -> asset API | after `reserved` is committed, before CreateAsset | reservation | WO-01: lease expiry | EC-01 |', '',
+    ].join('\n'));
+    assert(!has(run(packageDir)), 'a row with an existing owner and a declared edge case closes the point');
+
+    writeFileSync(join(packageDir, '04-trd.md'), [
+      '# TRD', '', '## Transition Closure', '',
+      '| Boundary | After / before | State left behind | Recovery owner | Edge case |',
+      '|---|---|---|---|---|',
+      '| cancel vs create | after DELETE 404, before late PUT | live remote asset | WO-09 | EC-07 |',
+      '| projector | after event stored, before projection | stale view | nobody | — |', '',
+    ].join('\n'));
+    const rows = found(run(packageDir));
+    assert(rows.some((text) => text.includes('row 1') && text.includes('WO-09 not found')), 'an owner that is not a workorder is surfaced');
+    assert(rows.some((text) => text.includes('row 1') && text.includes('EC-07 not declared')), 'an undeclared edge case is surfaced');
+    assert(rows.filter((text) => text.includes('row 2')).length === 2, 'a row with neither owner nor edge case is surfaced twice');
+    cases += 1;
+
+    writeFileSync(join(packageDir, '04-trd.md'), '# TRD\n');
+    writeFileSync(join(packageDir, 'REVIEW-MANIFEST.json'), JSON.stringify({ waves: { W1: { accepted_at: '2026-11-16T08:00:00.000Z' } } }));
+    assert(!has(run(packageDir)), 'a package with a wave accepted before the rule keeps its contract');
+  }
+
   // --- UX accepted for an undecomposed wave -----------------------------------
 
   {

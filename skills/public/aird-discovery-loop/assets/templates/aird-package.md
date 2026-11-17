@@ -143,6 +143,12 @@ Every medium/high risk must name the decision, mitigation owner or workorder, an
   exists: heading `## Implicit Properties Of Existing Entities`, a table
   (property of existing rows | who relies on it, including the previous build on
   rollback | what the new path produces | decision) or `None.` with the reason:
+- Transition closure — required for a `deep` package or a `job`/`external`
+  workorder: heading `## Transition Closure`, a table (boundary | after X is
+  committed, before Y | state left behind | recovery owner `WO-NN` | `EC-NN`),
+  walked step by step, plus the statuses of the other side, the hook that
+  triggers each path, human decisions on delete/restore, and outcomes the data
+  model must store; or `None.` with the reason:
 - Alternatives rejected:
 - Assumptions and open technical questions:
 
