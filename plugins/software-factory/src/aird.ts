@@ -808,6 +808,46 @@ const DISCOVERY_STAGES: StageDef[] = [
   { id: "review", label: "Финальное ревью", match: /review|accept|summary/iu, artifact: "DISCOVERY-SUMMARY.md" },
 ];
 
+/**
+ * The files each discovery stage writes. A stage whose files changed after
+ * the last STATE.md checkpoint is being worked on now, even before the
+ * orchestrator writes `active_phase` at the end of the phase; parallel stages
+ * (prototype and TRD) can be current together.
+ */
+const STAGE_FILES: Record<string, string[]> = {
+  intake: ["00-intake.md"],
+  discussion: ["00-discussion-log.md"],
+  recon: ["codemap.md"],
+  probe: [],
+  product: ["01-prd.md", "02-ux-problem-framing.md", "02-ui-spec.md"],
+  prototype: ["02-ui-prototype.md", "prototype"],
+  risks: ["03-risk-register.md"],
+  trd: ["04-trd.md", "05-api-contracts.md", "06-data-models.md"],
+  plan: ["07-implementation-plan.md", "08-quality-gates.md", "09-dod.md", "workorders"],
+  review: ["DISCOVERY-SUMMARY.md", "REVIEW-MANIFEST.json"],
+};
+
+/** Latest change of a package file, or of the files directly inside a folder. */
+function changedAt(dir: string, rel: string): { at: number; name: string } | null {
+  const path = join(dir, rel);
+  try {
+    const stat = statSync(path);
+    if (!stat.isDirectory()) return { at: stat.mtimeMs, name: rel };
+    let latest = { at: stat.mtimeMs, name: `${rel}/` };
+    for (const name of readdirSync(path)) {
+      try {
+        const child = statSync(join(path, name));
+        if (child.mtimeMs > latest.at) latest = { at: child.mtimeMs, name: `${rel}/${name}` };
+      } catch {
+        // vanished
+      }
+    }
+    return latest;
+  } catch {
+    return null;
+  }
+}
+
 const STATUS_ORDER = [
   "discovery",
   "ready_for_delivery",
@@ -862,6 +902,9 @@ export function deriveStages(pkg: ParsedPackage): {
 
   const stages: StageNode[] = [];
   let discoveryCurrent = DISCOVERY_STAGES.length; // past the end = discovery done
+  // Stages ahead of the recorded phase whose files changed after the last checkpoint.
+  const fresh = new Map<number, string>();
+  let recordedDone = false;
   if (rank === 0) {
     discoveryCurrent = DISCOVERY_STAGES.findIndex((s) => s.match.test(state?.activePhase ?? ""));
     if (discoveryCurrent < 0) {
@@ -871,16 +914,33 @@ export function deriveStages(pkg: ParsedPackage): {
       });
       discoveryCurrent = lastPresent;
     }
+    const checkpoint = changedAt(pkg.dir, "STATE.md")?.at ?? null;
+    if (checkpoint !== null) {
+      const newer = (id: string) =>
+        (STAGE_FILES[id] ?? [])
+          .map((rel) => changedAt(pkg.dir, rel))
+          .filter((change): change is { at: number; name: string } => change !== null && change.at > checkpoint + 1000)
+          .sort((a, b) => b.at - a.at)[0];
+      DISCOVERY_STAGES.forEach((stage, index) => {
+        if (index <= discoveryCurrent) return;
+        const change = newer(stage.id);
+        if (change) fresh.set(index, `${change.name} — новее отметки в STATE.md`);
+      });
+      // Work has moved past the recorded phase unless that phase's own files changed too.
+      recordedDone = fresh.size > 0 && !newer(DISCOVERY_STAGES[discoveryCurrent]?.id ?? "");
+    }
   }
+  const furthest = Math.max(discoveryCurrent, ...fresh.keys());
   DISCOVERY_STAGES.forEach((stage, index) => {
+    const active = (index === discoveryCurrent && !recordedDone) || fresh.has(index);
     const state_: StageNode["state"] =
-      index < discoveryCurrent ? "done" : index === discoveryCurrent ? (paused ? "blocked" : "current") : "todo";
+      active ? (paused ? "blocked" : "current") : index <= furthest ? "done" : "todo";
     stages.push({
       id: stage.id,
       label: stage.label,
       lane: "discovery",
       state: state_,
-      detail: stage.artifact && existing.has(stage.artifact) ? stage.artifact : null,
+      detail: fresh.get(index) ?? (stage.artifact && existing.has(stage.artifact) ? stage.artifact : null),
     });
   });
 
@@ -932,8 +992,9 @@ export function deriveStages(pkg: ParsedPackage): {
     stages.push({ id: def.id, label: def.label, lane: "delivery", state: nodeState, detail: def.detail });
   }
 
+  // The furthest stage in progress: parallel discovery stages can be current together.
   const current =
-    stages.find((s) => s.state === "current" || s.state === "blocked") ??
+    [...stages].reverse().find((s) => s.state === "current" || s.state === "blocked") ??
     [...stages].reverse().find((s) => s.state === "done") ??
     stages[0]!;
   const doneCount = stages.filter((s) => s.state === "done").length;

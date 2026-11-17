@@ -190,9 +190,9 @@ function DetailBody({
                 без worktree
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1" title="Worktree создаётся при первом запуске discovery или delivery">
+              <span className="inline-flex items-center gap-1" title="Рабочая копия AIRD создаётся при первом запуске discovery или delivery">
                 <Icon name="FolderGit" fallback="Folder" className="size-3.5" />
-                worktree при запуске
+                клон при запуске
               </span>
             )}
             <span>обновлён {relativeTime(s.updatedAt ?? s.createdAt)}</span>
@@ -953,7 +953,18 @@ function CommitsTab({ data }: { data: AirdDetail }) {
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
           <Icon name="GitBranch" className="size-4" />
-          {commits?.branch ? <span className="font-mono text-foreground">{commits.branch}</span> : <span>ветка aird/{data.summary.slug} не найдена</span>}
+          {commits?.branch ? <span className="font-mono text-foreground">{commits.branch}</span> : <span>ветки aird/{data.summary.slug} нет</span>}
+          {commits?.repos && commits.repos.length > 0 ? (
+            <span>
+              {commits.branch ? "в " : "· коммиты по записям пакета в "}
+              {commits.repos.map((repo, index) => (
+                <span key={repo}>
+                  {index > 0 ? ", " : ""}
+                  <span className="font-mono text-foreground">{repo}</span>
+                </span>
+              ))}
+            </span>
+          ) : null}
           {commits?.base ? <span>относительно {commits.base}</span> : null}
           {commits ? <span>· {commits.commits.length} коммитов</span> : null}
         </div>
@@ -980,6 +991,11 @@ function CommitsTab({ data }: { data: AirdDetail }) {
                 <span className="mt-1.5 size-2 shrink-0 rounded-full border-2 border-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
+                    {commit.repo ? (
+                      <span className="rounded border border-border px-1.5 py-px font-mono text-[10px] text-muted-foreground" title="Репозиторий">
+                        {commit.repo}
+                      </span>
+                    ) : null}
                     <span className="text-sm">{commit.subject}</span>
                     {commit.refs.map((ref) => (
                       <RefLink key={ref} id={ref} />

@@ -196,6 +196,8 @@ export const commitSchema = z.object({
   author: z.string(),
   date: z.string(),
   refs: z.array(z.string()),
+  /** Repository folder the commit came from, when the AIRD spans several repositories. */
+  repo: z.string().nullable().optional(),
 });
 export type Commit = z.infer<typeof commitSchema>;
 
@@ -266,6 +268,8 @@ export const commitsResultSchema = z.object({
   base: z.string().nullable(),
   commits: z.array(commitSchema),
   error: z.string().nullable(),
+  /** Repositories (workspace-relative) where the AIRD branch or its merges were found. */
+  repos: z.array(z.string()).optional(),
 });
 export type CommitsResult = z.infer<typeof commitsResultSchema>;
 

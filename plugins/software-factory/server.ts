@@ -38,7 +38,7 @@ import {
   runtimeDefaults,
   runtimeFamily,
 } from "./src/agents";
-import { airdCommits, commitDetail } from "./src/git";
+import { airdCommits, commitDetail, commitsByHash, isGitFolder, packageCommitRefs, workspaceCommits } from "./src/git";
 import { readEval, readMetrics } from "./src/metrics";
 import { acceptanceBase, acceptanceSuiteRevision, deliveryRevision, ensureAcceptanceWorktree, ensureWorkspaceCheckout, ensureWorktree, gitDirs, gitText, isLinkedWorktree, migrateWorktreeToClone, nestedRepos, pushBranch, refreshAcceptanceWorktree, repoOfPath, withBaselineCheckout, type WorkspaceRepo } from "./src/worktree";
 import { assessRun, hasSuite, runSuite, selectScenarioScope, type ScenarioResult, type SuiteRun } from "./src/acceptance";
@@ -50,6 +50,8 @@ import {
   rpcContract,
   type AgentThread,
   type AirdDetail,
+  type Commit,
+  type CommitsResult,
   type Answers,
   type Question,
   type QuestionPart,
@@ -948,6 +950,8 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   const commitCache = new Map<string, { at: number; refCounts: Map<string, number> }>();
+  /** Folders the last commits list was read from, per AIRD, so a commit opens from the right repository. */
+  const commitSources = new Map<string, string[]>();
 
   // -------------------------------------------------------------- spawning
   async function projectInfo(projectId: string): Promise<ProjectInfo> {
@@ -2578,6 +2582,73 @@ export default async function plugin(bb: BbPluginApi) {
     return run("node").catch(() => run(process.execPath));
   }
 
+  /** Commits of one AIRD: its clones, its folder, or — when the folder is not git — the repositories inside it. */
+  async function commitsOf(id: string): Promise<CommitsResult> {
+    const entry = await findEntry(id);
+    const dir = packageDir(entry);
+    const pkg = readPackage(dir);
+    const work = workFolderOf(entry);
+    const repos = reposOf(entry.record);
+    if (entry.record) await syncBranches(entry.record);
+    let result: CommitsResult;
+    const byDate = (a: Commit, b: Commit) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+    // The package's own history, when the package lives in a repository of its own.
+    const packageHistory = async (): Promise<Commit[]> =>
+      (await isGitFolder(dir)) ? (await airdCommits(dir, entry.slug, ".", null)).commits.map((commit) => ({ ...commit, repo: "пакет" })) : [];
+    // Commits the package itself records (delivery writes each slice's commit into evidence),
+    // counted only from when the AIRD began: the earliest of its package files, its package commits, its record.
+    const referenced = packageCommitRefs(dir);
+    const ownHistory = await packageHistory();
+    const starts: number[] = ownHistory.map((commit) => Date.parse(commit.date)).filter((value) => Number.isFinite(value));
+    if (entry.record?.created_at) starts.push(entry.record.created_at);
+    for (const name of ["00-intake.md", "STATE.md", "00-discussion-log.md"]) {
+      try { starts.push(statSync(join(dir, name)).birthtimeMs); } catch { /* not written yet */ }
+    }
+    const since = starts.length ? Math.min(...starts) - 60 * 60 * 1000 : null;
+    if (repos.length > 0) {
+      // Workspace with the AIRD's own clones: code commits per repository plus the package's history.
+      const parts = await Promise.all(repos.map(async (repo) => ({ repo, result: await airdCommits(repo.path, entry.slug, null, repo.base) })));
+      const byHash = new Map<string, Commit>();
+      for (const { repo, result: part } of parts) for (const commit of part.commits) byHash.set(commit.sha, { ...commit, repo: repo.package ? "пакет" : repo.rel });
+      for (const repo of repos.filter((item) => !item.package)) {
+        for (const commit of await commitsByHash(repo.path, referenced, since)) if (!byHash.has(commit.sha)) byHash.set(commit.sha, { ...commit, repo: repo.rel });
+      }
+      for (const commit of ownHistory) if (!byHash.has(commit.sha)) byHash.set(commit.sha, commit);
+      result = {
+        branch: `aird/${entry.slug}`,
+        base: repos.find((repo) => !repo.package)?.base ?? repos[0]!.base,
+        commits: [...byHash.values()].sort(byDate).slice(0, 300),
+        error: parts.length > 0 && parts.every((part) => part.result.error) ? parts[0]!.result.error : null,
+        repos: repos.filter((repo) => !repo.package).map((repo) => repo.rel),
+      };
+      commitSources.set(entry.id, [...repos.map((repo) => repo.path), dir]);
+    } else if (!(await isGitFolder(work))) {
+      // The folder is not a repository: drill down into the repositories inside it.
+      const found = await workspaceCommits(work, entry.slug, nestedRepos(work).filter((rel) => rel !== ".agent"), pkg.manifestBaseRef, referenced, since);
+      const byHash = new Map(found.commits.map((commit) => [commit.sha, commit]));
+      for (const commit of ownHistory) if (!byHash.has(commit.sha)) byHash.set(commit.sha, commit);
+      result = {
+        branch: found.branch,
+        base: found.base,
+        commits: [...byHash.values()].sort(byDate).slice(0, 300),
+        error: null,
+        repos: found.repos ?? [],
+      };
+      commitSources.set(entry.id, [...found.sources.map((source) => source.path), dir]);
+    } else {
+      const rel = relative(work, dir) || dir;
+      result = await airdCommits(work, entry.slug, rel, pkg.manifestBaseRef);
+      const known = new Set(result.commits.map((commit) => commit.sha));
+      const extra = (await commitsByHash(work, referenced, since)).filter((commit) => !known.has(commit.sha));
+      if (extra.length) result = { ...result, commits: [...result.commits, ...extra].sort(byDate).slice(0, 300) };
+      commitSources.set(entry.id, [work]);
+    }
+    const refCounts = new Map<string, number>();
+    for (const commit of result.commits) for (const ref of commit.refs) refCounts.set(ref, (refCounts.get(ref) ?? 0) + 1);
+    commitCache.set(entry.id, { at: Date.now(), refCounts });
+    return result;
+  }
+
   bb.rpc.register(rpcContract, {
     running_count: async () => {
       const rows = q.allThreads.all();
@@ -2737,10 +2808,10 @@ export default async function plugin(bb: BbPluginApi) {
     },
     aird_commit: async ({ id, sha }) => {
       const entry = await findEntry(id);
-      const repos = reposOf(entry.record);
-      if (repos.length === 0) return commitDetail(workFolderOf(entry), sha);
-      let detail = await commitDetail(repos[0]!.path, sha);
-      for (const folder of [...repos.slice(1).map((repo) => repo.path), packageDir(entry)]) {
+      // The repositories the commits list came from; a sha belongs to exactly one of them.
+      const sources = commitSources.get(entry.id) ?? [...reposOf(entry.record).map((repo) => repo.path), workFolderOf(entry), packageDir(entry)];
+      let detail = await commitDetail(sources[0] ?? workFolderOf(entry), sha);
+      for (const folder of sources.slice(1)) {
         if (!detail.error) break;
         detail = await commitDetail(folder, sha);
       }
@@ -2797,36 +2868,7 @@ export default async function plugin(bb: BbPluginApi) {
       return { runId };
     },
     acceptance_log: async ({ runId }) => ({ log: q.runById.get(runId)?.log ?? "" }),
-    aird_commits: async ({ id }) => {
-      const entry = await findEntry(id);
-      const dir = packageDir(entry);
-      const pkg = readPackage(dir);
-      const work = workFolderOf(entry);
-      const repos = reposOf(entry.record);
-      if (entry.record) await syncBranches(entry.record);
-      let result;
-      if (repos.length > 0) {
-        // Workspace: code commits per repository plus the package's own history.
-        const parts = await Promise.all([
-          ...repos.map((repo) => airdCommits(repo.path, entry.slug, null, repo.base)),
-          airdCommits(dir, entry.slug, ".", null),
-        ]);
-        const byHash = new Map(parts.flatMap((part) => part.commits).map((commit) => [commit.sha, commit]));
-        result = {
-          branch: `aird/${entry.slug}`,
-          base: repos[0]!.base,
-          commits: [...byHash.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, 300),
-          error: parts.every((part) => part.error) ? parts[0]!.error : null,
-        };
-      } else {
-        const rel = relative(work, dir) || dir;
-        result = await airdCommits(work, entry.slug, rel, pkg.manifestBaseRef);
-      }
-      const refCounts = new Map<string, number>();
-      for (const commit of result.commits) for (const ref of commit.refs) refCounts.set(ref, (refCounts.get(ref) ?? 0) + 1);
-      commitCache.set(entry.id, { at: Date.now(), refCounts });
-      return result;
-    },
+    aird_commits: async ({ id }) => commitsOf(id),
     aird_validate: async ({ id }) => runValidator(packageDir(await findEntry(id))),
     aird_create: async ({ projectId, folder, title, slug, request, start }) => {
       const project = await projectInfo(projectId);
@@ -2992,6 +3034,7 @@ export default async function plugin(bb: BbPluginApi) {
         summary: "Слепая приёмка AIRD: статус, регистрация набора, прогон на базе или на реализации",
         usage: "bb software-factory acceptance <aird-id|slug> status|register <run.sh>|run [--baseline]",
       },
+      { name: "commits", summary: "Коммиты AIRD — в папке или во вложенных репозиториях, если папка не git", usage: "bb software-factory commits <aird-id|slug> [--json]" },
       { name: "layout", summary: "Где AIRD пишет код, пакет и git-данные — и можно ли туда писать; --prepare готовит раскладку как старт delivery", usage: "bb software-factory layout <aird-id|slug> [--prepare] [--json]" },
     ],
     async run(argv) {
@@ -3027,6 +3070,22 @@ export default async function plugin(bb: BbPluginApi) {
           `пакет: ${full.summary.packagePath}`,
         ].join("\n");
         return { exitCode: 0, stdout: text };
+      }
+      if (command === "commits" && target) {
+        const data = await overview();
+        const aird = data.airds.find((candidate) => candidate.id === target || candidate.slug === target);
+        if (!aird) return { exitCode: 1, stderr: `AIRD ${target} не найден. bb software-factory list` };
+        const started = Date.now();
+        const result = await commitsOf(aird.id);
+        if (json) return { exitCode: 0, stdout: JSON.stringify(result) };
+        return {
+          exitCode: 0,
+          stdout: [
+            `${result.branch ?? `ветки aird/${aird.slug} нет`}${result.repos?.length ? `${result.branch ? " в " : " · коммиты по записям пакета в "}${result.repos.join(", ")}` : ""}${result.base ? ` относительно ${result.base}` : ""} · ${result.commits.length} коммитов · ${Date.now() - started} мс`,
+            ...(result.error ? [`ошибка: ${result.error}`] : []),
+            ...result.commits.slice(0, 15).map((commit) => `  ${commit.short}  ${(commit.repo ?? "").padEnd(18)} ${commit.subject}`),
+          ].join("\n"),
+        };
       }
       if (command === "layout" && target) {
         const data = await overview();

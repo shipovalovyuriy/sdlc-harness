@@ -3,7 +3,9 @@
 // request, so the AIRD's commits are: the unmerged commits of that branch,
 // plus the commits brought in by every merge whose message names the branch.
 // Commits that touched the package directory are the fallback.
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import type { Commit, CommitsResult } from "./contract";
 
 const SEP = "\u001f";
@@ -87,13 +89,21 @@ export async function airdCommits(
     }
   }
   const base = await resolveBase(folder, manifestBaseRef);
+  // A branch merged by fast-forward is an ancestor of the base and no merge
+  // commit names it: count from the commit the branch was created at instead.
+  let floor = base;
+  if (branch !== null && base !== null && !branch.startsWith("origin/") && (await tryGit(folder, ["merge-base", "--is-ancestor", branch, base])) !== null) {
+    const created = (await tryGit(folder, ["reflog", "show", "--format=%H", `refs/heads/${branch}`]))?.trim().split("\n").filter(Boolean).at(-1);
+    const tip = (await tryGit(folder, ["rev-parse", branch]))?.trim();
+    if (created && created !== tip) floor = created;
+  }
   const byHash = new Map<string, Commit>();
   const add = (commits: Commit[]) => {
     for (const commit of commits) if (!byHash.has(commit.sha)) byHash.set(commit.sha, commit);
   };
 
   if (branch !== null) {
-    const range = base ? [branch, `^${base}`] : [branch];
+    const range = floor ? [branch, `^${floor}`] : [branch];
     add(parseLog(await tryGit(folder, ["log", "--no-merges", "-n", "300", `--format=${FORMAT}`, ...range])));
   }
   if (base !== null) {
@@ -185,4 +195,180 @@ export async function commitDetail(folder: string, sha: string): Promise<CommitD
     truncated: patch.length > MAX_PATCH,
     error: null,
   };
+}
+
+export async function isGitFolder(folder: string): Promise<boolean> {
+  return (await tryGit(folder, ["rev-parse", "--show-toplevel"])) !== null;
+}
+
+/**
+ * One folder per real repository. Linked worktrees (`.worktrees/feature-x`)
+ * share refs with their main checkout, so they would list the same commits
+ * again; the main checkout represents them. Reads `.git` only, no git calls.
+ */
+export function uniqueRepositories(root: string, rels: string[]): { rel: string; path: string }[] {
+  const byRepo = new Map<string, { rel: string; path: string; main: boolean }>();
+  for (const rel of rels) {
+    const path = join(root, rel);
+    const dotGit = join(path, ".git");
+    let common: string;
+    let main = false;
+    try {
+      if (lstatSync(dotGit).isDirectory()) {
+        common = dotGit;
+        main = true;
+      } else {
+        const gitdir = /^gitdir:\s*(.+)$/mu.exec(readFileSync(dotGit, "utf8"))?.[1]?.trim();
+        if (!gitdir) continue;
+        const absolute = resolve(path, gitdir);
+        common = /[/\\]worktrees[/\\][^/\\]+[/\\]?$/u.test(absolute) ? dirname(dirname(absolute)) : absolute;
+      }
+    } catch {
+      continue;
+    }
+    let key = common;
+    try {
+      key = realpathSync(common);
+    } catch {
+      // keep the unresolved path
+    }
+    const previous = byRepo.get(key);
+    if (!previous || (main && !previous.main)) byRepo.set(key, { rel, path, main });
+  }
+  return [...byRepo.values()].map(({ rel, path }) => ({ rel, path })).sort((a, b) => a.rel.localeCompare(b.rel));
+}
+
+async function inPool<T>(items: T[], size: number, run: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(size, items.length) }, async () => {
+      while (next < items.length) await run(items[next++]!);
+    }),
+  );
+}
+
+/**
+ * Commits of `aird/<slug>` in a folder that is not itself a repository but
+ * holds repositories (a polyrepo workspace): every real repository where the
+ * branch exists, or where a merge names it (branches are often deleted after
+ * the pull request), contributes its commits, labelled with its folder.
+ */
+export async function workspaceCommits(
+  root: string,
+  slug: string,
+  rels: string[],
+  manifestBaseRef: string | null,
+  referenced: string[] = [],
+  since: number | null = null,
+): Promise<CommitsResult & { sources: { rel: string; path: string }[] }> {
+  const branch = `aird/${slug}`;
+  const repos = uniqueRepositories(root, rels);
+  const found: { rel: string; path: string }[] = [];
+  const recorded = new Map<string, Commit[]>();
+  await inPool(repos, 8, async (repo) => {
+    // Commits the package records, wherever they live.
+    const hits = await commitsByHash(repo.path, referenced, since);
+    if (hits.length) recorded.set(repo.rel, hits);
+    const refs = await tryGit(repo.path, ["for-each-ref", "--count=1", "--format=%(refname)", `refs/heads/${branch}`, `refs/remotes/origin/${branch}`]);
+    let hit = Boolean(refs?.trim());
+    if (!hit) {
+      const merge = await tryGit(repo.path, ["log", "--all", "--merges", "-n", "1", "--format=%H", "--fixed-strings", `--grep=${branch}`]);
+      hit = Boolean(merge?.trim());
+    }
+    if (hit) found.push(repo);
+  });
+  found.sort((a, b) => a.rel.localeCompare(b.rel));
+  const parts = await Promise.all(found.map(async (repo) => ({ repo, result: await airdCommits(repo.path, slug, null, manifestBaseRef) })));
+  const byHash = new Map<string, Commit>();
+  for (const { repo, result } of parts) for (const commit of result.commits) if (!byHash.has(commit.sha)) byHash.set(commit.sha, { ...commit, repo: repo.rel });
+  for (const [rel, commits] of recorded) for (const commit of commits) if (!byHash.has(commit.sha)) byHash.set(commit.sha, { ...commit, repo: rel });
+  const withRecorded = repos.filter((repo) => recorded.has(repo.rel) && !found.some((item) => item.rel === repo.rel));
+  found.push(...withRecorded);
+  found.sort((a, b) => a.rel.localeCompare(b.rel));
+  const commits = [...byHash.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)).slice(0, 300);
+  return {
+    branch: parts.length ? branch : null,
+    base: parts.find((part) => part.result.base)?.result.base ?? null,
+    commits,
+    error: null,
+    repos: found.map((repo) => repo.rel),
+    sources: found,
+  };
+}
+
+/**
+ * Commit hashes an AIRD package records (STATE.md, reports, workorders,
+ * evidence): delivery writes the commits of each slice there. Lines about a
+ * base are skipped so the base commit is not taken for the AIRD's own.
+ */
+export function packageCommitRefs(packageDir: string, limit = 600): string[] {
+  const found = new Set<string>();
+  const visit = (dir: string, depth: number) => {
+    let names: string[];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      if (found.size >= limit || name.startsWith(".") || name === "node_modules" || name === "prototype" || name === "inputs") continue;
+      const path = join(dir, name);
+      let stat;
+      try {
+        stat = statSync(path);
+      } catch {
+        continue;
+      }
+      if (stat.isDirectory()) {
+        if (depth < 3) visit(path, depth + 1);
+        continue;
+      }
+      if (!/\.(md|json|jsonl|txt|log|ya?ml)$/iu.test(name) || stat.size > 2_000_000) continue;
+      let text: string;
+      try {
+        text = readFileSync(path, "utf8");
+      } catch {
+        continue;
+      }
+      for (const line of text.split("\n")) {
+        if (/(^|[^a-z])base|merge-base|база|базов|origin\//iu.test(line)) continue;
+        for (const match of line.matchAll(/(?<![0-9a-zA-Z_-])[0-9a-f]{7,40}(?![0-9a-zA-Z_-])/gu)) {
+          // `A..B`: A is where a diff starts, not a commit of the AIRD.
+          if (line.slice((match.index ?? 0) + match[0].length).startsWith("..")) continue;
+          if (/[a-f]/u.test(match[0]) && /[0-9]/u.test(match[0])) found.add(match[0]);
+        }
+      }
+    }
+  };
+  visit(packageDir, 0);
+  return [...found].slice(0, limit);
+}
+
+/** Which of the given names are commits in this repository: one `git cat-file --batch-check`. */
+function resolveCommits(cwd: string, names: string[]): Promise<string[]> {
+  return new Promise((resolvePromise) => {
+    if (names.length === 0) return resolvePromise([]);
+    const child = spawn("git", ["-C", cwd, "cat-file", "--batch-check=%(objectname) %(objecttype)"], { stdio: ["pipe", "pipe", "ignore"] });
+    let out = "";
+    const timer = setTimeout(() => child.kill("SIGKILL"), 15_000);
+    child.stdout.on("data", (chunk: Buffer) => (out += chunk.toString("utf8")));
+    child.on("error", () => resolvePromise([]));
+    child.on("close", () => {
+      clearTimeout(timer);
+      resolvePromise([...new Set(out.split("\n").filter((line) => line.endsWith(" commit")).map((line) => line.split(" ")[0]!))]);
+    });
+    child.stdin.end(`${names.join("\n")}\n`);
+  });
+}
+
+/**
+ * The recorded commits that are commits of this repository. With `since`,
+ * only those made after the AIRD began: a package also mentions the base it
+ * started from and the state of a repository at probe time.
+ */
+export async function commitsByHash(cwd: string, names: string[], since: number | null = null): Promise<Commit[]> {
+  const shas = await resolveCommits(cwd, names);
+  if (shas.length === 0) return [];
+  const commits = parseLog(await tryGit(cwd, ["log", "--no-walk=unsorted", `--format=${FORMAT}`, ...shas.slice(0, 300)]));
+  return since === null ? commits : commits.filter((commit) => Date.parse(commit.date) >= since);
 }
