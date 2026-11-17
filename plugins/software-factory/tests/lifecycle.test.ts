@@ -113,6 +113,9 @@ test('Factory owns stage transitions and the session budget: no skipped stage, n
     writeFileSync(join(pkg, 'STATE.md'), before);
 
     // ----- session budget
+    // Discovery's orchestrator already used its six slices: they are its session, not delivery's.
+    db.prepare(`INSERT INTO threads(thread_id,aird_id,role,kind,stage,title,created_at) VALUES ('disc-1','fixture','aird-discovery-loop','orchestrator','discovery','Discovery',0)`).run();
+    for (let n = 1; n <= 6; n += 1) db.prepare(`INSERT INTO slices(aird_id,thread_id,provider_session,ref,context_pct,started_at) VALUES ('fixture','disc-1',NULL,?,10,0)`).run(`phase ${n}`);
     for (let n = 1; n <= 6; n += 1) {
       const slice = await call('sf_slice_begin', { ref: `WO-0${n}` });
       assert.equal(slice.isError, undefined, text(slice)); assert.match(text(slice), new RegExp(`Срез ${n} из 6`)); assert.match(text(slice), /контекст 10%/);
@@ -132,7 +135,7 @@ test('Factory owns stage transitions and the session budget: no skipped stage, n
     const next = /@thread:(thread-\d+)/.exec(text(handoff))![1]!;
     assert.match(text(await call('sf_slice_begin', { ref: 'WO-07' })), /передача уже записана/);
     detail = await harness.behavior.callRpc('aird_detail', { id: 'fixture' });
-    assert.equal(detail.session.slices, 6, 'no reset until the new session confirms the handoff');
+    assert.equal(detail.session.threadId, next); assert.equal(detail.session.slices, 0, 'the new session has not started a slice yet');
     assert.equal(detail.session.handoffs[0].confirmedAt, null);
 
     usage = null; // the new session cannot measure context: said explicitly, slice limit still applies
@@ -145,5 +148,7 @@ test('Factory owns stage transitions and the session budget: no skipped stage, n
     usage = { usedTokens: 720_000, modelContextWindow: 1_000_000, estimated: false };
     const full = await call('sf_slice_begin', { ref: 'WO-08' }, next);
     assert.equal(full.isError, true); assert.match(text(full), /72%/);
+    // The session that handed off stays closed even after the new one confirmed it.
+    assert.match(text(await call('sf_slice_begin', { ref: 'WO-09' })), /передача уже записана/);
   } finally { await harness.lifecycle.dispose(); rmSync(dir, { recursive: true, force: true }); }
 });

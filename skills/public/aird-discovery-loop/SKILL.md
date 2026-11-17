@@ -17,6 +17,7 @@ The same token model as `$aird-delivery-loop` applies: **no long-lived all-remem
 - **The orchestrator holds decisions, not bulk.** Subagents read sources and write package files directly when their available tools permit it. Before assigning file authorship, check that the selected role has file-writing tools; otherwise give authorship to `docs` with the scoped brief and named source sections, and keep the read-only specialist for analysis. Do not broaden the specialist's permissions. Subagents return verdicts, key facts, and paths — not transcripts or file dumps. The orchestrator's working memory is the running decision table plus `STATE.md`, not the docs' contents.
 - **Pay for judgment, not for typing.** High-effort models go to judgment roles — `architect`, `architect-deep`, `reviewer`, `risk-analyst`, `cybersec`. Mechanical work — document edits, finding fixes, plan/index sync, the discovery summary — goes to the lighter configured agents (`docs`, `worker`, `explorer`) at low or medium effort. A subagent that inherits the orchestrator's model and effort is the most expensive way to retype a table.
 - **Short-lived authors.** An agent re-reads its whole context on every call, so its cost grows roughly with the square of its lifetime: one author that wrote TRD, contracts, and data models in 154 calls at a 640k-token context cost 62M tokens, more than all of intake, discussion, reconnaissance, and probes together (74M). One author writes one document (or one section of a large one), is told the exact files and headings to read, and returns — budget about 40 calls and 150k context. An author that needs more was given too much: stop it and split the task, do not let it run on. Short, narrow agents are why the risk and discussion half of discovery is cheap; keep the authoring half the same shape.
+- **Continue an agent when the next step builds on its own work.** A new agent first re-reads its brief, the package and the sources: 50–200k tokens before it does anything. When the next step uses what an agent has just learned, send it to that agent as a continuation (in Software Factory: `sf_continue_agent`; elsewhere, a follow-up to the same subagent if the runtime allows it). Typical cases: the next probe of the same service with the same client and keys, a gap left in the document it has just written, the next phase of the same analysis (the RAT list, then the risk register). Start a new agent for a different task or document, or once the agent is past the author budget above (~150k context); Factory refuses a continuation at 300k or 60%. One package started 33 agents and continued none of them: six debuggers for one probe client, three `docs` agents to patch documents written minutes earlier, two risk analysts for one list (eval `continue-before-respawn`).
 - **Runtime probing is explorer work.** ssh, kubectl, curl, deploy checks, and log reading during reconnaissance run inside a scoped `explorer` (or a dedicated recon subagent) whose findings land in `codemap.md`/AIRD docs as evidence pointers. The main session never accumulates raw remote output.
 - **Command output is bounded at the source.** Redirect raw output from every
   variable-size search, probe, typecheck, test, or build to evidence. Return
@@ -305,8 +306,11 @@ Enumerate with `risk-analyst` loading `rat`: ask for the assumptions that would
 kill or reshape the solution, ranked, each with the cheapest test that could
 disprove it. Keep the list short — usually one to three. Then run the probes
 inside a scoped `explorer` or `debugger` subagent so raw request/response output
-lands in `evidence/` rather than the orchestrator context. Probes are
-independent; run them in parallel.
+lands in `evidence/` rather than the orchestrator context. Probes of different
+services are independent; run them in parallel, one agent per service. Probes
+of one service go to the same agent as continuations: its next claim, a retry
+once credentials arrive. That agent already holds the client, the path to the
+credentials and the quirks it found.
 
 Budget this gate in minutes, not phases. Its whole value is that it fails before
 you have written anything expensive.
@@ -913,6 +917,13 @@ a user decision. The complete rules — retries, later waves, exceptions — are
 `references/delivery-contract.md` → Review Budget And Finding Cutoff.
 
 #### Deterministic Validation And Final Combined Review
+
+**One sync pass.** Decisions made after a document was written (prototype
+review, workorder authors, a probe result) go into the decision table as they
+come. Before the strict run they are applied in one pass: small edits by the
+orchestrator, the rest by one agent. Do not start a sync agent after each
+decision. A gap the author left in its own document goes back to that author as
+a continuation, not to a new agent.
 
 Run the validator with `--strict` while `STATE.md` is still `discovery`, after
 all discovery artifacts and target-wave workorders are drafted but before the

@@ -219,7 +219,10 @@ export function QuestionCard({
   const [selection, setSelection] = useState<Selection>(() => emptySelection(question.parts));
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [contextOpen, setContextOpen] = useState(false);
+  // An approval approves what its context lists; a short context is part of the question. Show both up front.
+  const [contextOpen, setContextOpen] = useState(
+    question.status === "open" && (question.kind === "approval" || (question.context?.length ?? 0) <= 2500),
+  );
   const meta = KIND_META[question.kind];
   const color = TONE_COLORS[meta.tone];
   const open = question.status === "open";
@@ -302,7 +305,7 @@ export function QuestionCard({
               Контекст
             </button>
             {contextOpen ? (
-              <div className="mt-1.5 max-h-72 overflow-y-auto rounded-lg border border-border bg-muted/20 px-3 py-2">
+              <div className="mt-1.5 max-h-96 overflow-y-auto rounded-lg border border-border bg-muted/20 px-3 py-2">
                 <MarkdownView content={question.context} />
               </div>
             ) : null}

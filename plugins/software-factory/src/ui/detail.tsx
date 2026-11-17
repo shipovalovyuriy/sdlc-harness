@@ -460,6 +460,14 @@ function OverviewTab({ data, onTab, onMetrics }: { data: AirdDetail; onTab: (tab
                   <Pill tone={data.session.contextPct === null ? "neutral" : data.session.contextPct >= 70 ? "bad" : data.session.contextPct >= 60 ? "warn" : "neutral"}>
                     контекст {data.session.contextPct === null ? "н/д" : `${data.session.contextPct}%`}
                   </Pill>
+                  {data.session.agents.started > 0 ? (
+                    <span
+                      className="text-muted-foreground"
+                      title="Новые треды агентов и продолжения через sf_continue_agent. Продолжение не перечитывает бриф, пакет и источники заново."
+                    >
+                      агентов: {data.session.agents.started} новых · {data.session.agents.continued} продолжений
+                    </span>
+                  ) : null}
                   {data.session.handoffs.length > 0 ? (
                     <span className="text-muted-foreground">
                       передач: {data.session.handoffs.length}

@@ -141,6 +141,8 @@ interface ThreadRow {
   /** Stage node id (deriveStages) the agent was launched for. */
   stage_node: string | null;
   task: string | null;
+  /** How many follow-ups the orchestrator sent to this agent with sf_continue_agent. */
+  continuations?: number | null;
 }
 
 interface QuestionRow {
@@ -329,6 +331,7 @@ export default async function plugin(bb: BbPluginApi) {
       confirmed_at INTEGER
     )`,
     `ALTER TABLE handoffs ADD COLUMN slice_watermark INTEGER`,
+    `ALTER TABLE threads ADD COLUMN continuations INTEGER NOT NULL DEFAULT 0`,
   ]);
 
   const withThreadDefaults = (row: Record<string, unknown>) => ({ refs: null, stage_node: null, task: null, provider: null, model: null, effort: null, ...row });
@@ -358,9 +361,9 @@ export default async function plugin(bb: BbPluginApi) {
     handoffs: db.prepare<[string], { id: number; from_thread: string; to_thread: string; created_at: number; confirmed_at: number | null; slice_watermark: number | null }>(
       `SELECT id, from_thread, to_thread, created_at, confirmed_at, slice_watermark FROM handoffs WHERE aird_id = ? ORDER BY id`,
     ),
-    continueThread: db.prepare(`UPDATE threads SET task = ?, refs = ? WHERE thread_id = ?`),
+    continueThread: db.prepare(`UPDATE threads SET task = ?, refs = ?, continuations = coalesce(continuations, 0) + 1 WHERE thread_id = ?`),
     confirmHandoff: db.prepare(`UPDATE handoffs SET confirmed_at = ?, slice_watermark = ? WHERE id = ?`),
-    sliceCount: db.prepare<[string, number], { n: number }>(`SELECT COUNT(*) AS n FROM slices WHERE aird_id = ? AND id > ?`),
+    sliceCount: db.prepare<[string, string], { n: number }>(`SELECT COUNT(*) AS n FROM slices WHERE aird_id = ? AND thread_id = ?`),
     maxSliceId: db.prepare<[string], { m: number | null }>(`SELECT MAX(id) AS m FROM slices WHERE aird_id = ?`),
     lastSliceOf: db.prepare<[string], { started_at: number } | undefined>(`SELECT started_at FROM slices WHERE thread_id = ? ORDER BY id DESC LIMIT 1`),
     setWorkspace: db.prepare(
@@ -1567,6 +1570,41 @@ export default async function plugin(bb: BbPluginApi) {
     return { title: row.title, context };
   }
 
+  /**
+   * Idle agents of the same role in this AIRD that could still take a
+   * follow-up (under the continuation limits). A fresh agent re-reads its brief,
+   * the package and the sources; naming the idle one right after a spawn is how
+   * the orchestrator learns to continue the next time.
+   */
+  async function continuationCandidates(parentThreadId: string, role: string, exceptThreadId: string): Promise<string[]> {
+    const parentRow = q.threadById.get(parentThreadId);
+    if (!parentRow) return [];
+    const same = q.threadsByAird.all(parentRow.aird_id)
+      .filter((thread) => thread.kind === "agent" && thread.role === role && thread.thread_id !== exceptThreadId)
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, 3);
+    const found: string[] = [];
+    for (const thread of same) {
+      if (awaitingStart(thread.thread_id)) continue;
+      try {
+        const live = (await bb.sdk.threads.get({ threadId: thread.thread_id })) as unknown as {
+          status: string;
+          contextWindowUsage?: { usedTokens?: number; modelContextWindow?: number };
+        };
+        if (RUNNING.has(live.status)) continue;
+        const used = live.contextWindowUsage?.usedTokens ?? null;
+        const window = live.contextWindowUsage?.modelContextWindow ?? null;
+        const pct = used !== null && window ? Math.round((used / window) * 100) : null;
+        if ((used ?? 0) >= CONTINUE_MAX_TOKENS || (pct ?? 0) >= CONTINUE_MAX_PCT) continue;
+        const size = used === null ? "контекст н/д" : `${Math.round(used / 1000)} тыс. токенов`;
+        found.push(`@thread:${thread.thread_id} («${thread.title}», ${size})`);
+      } catch {
+        // A thread we cannot read is not offered.
+      }
+    }
+    return found;
+  }
+
   // ------------------------------------------------------------ lifecycle
   // Stage transitions and the session budget are Factory operations: the
   // orchestrator asks, Factory checks the evidence, writes STATE.md and keeps
@@ -1643,14 +1681,18 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   async function sessionView(airdId: string, threads: ThreadRow[]) {
-    const session = sessionOf(airdId, null);
     const orchestrator = [...threads].filter((thread) => thread.kind === "orchestrator").sort((a, b) => b.created_at - a.created_at)[0] ?? null;
+    const session = sessionOf(airdId, orchestrator?.thread_id ?? null);
     const context = orchestrator ? await contextOf(orchestrator.thread_id) : { pct: null };
     return {
       slices: session.slices,
       limit: SLICE_LIMIT,
       threadId: orchestrator?.thread_id ?? null,
       contextPct: context.pct,
+      agents: {
+        started: threads.filter((thread) => thread.kind === "agent").length,
+        continued: threads.reduce((sum, thread) => sum + (thread.kind === "agent" ? thread.continuations ?? 0 : 0), 0),
+      },
       handoffs: session.handoffs.map((handoff) => ({ from: handoff.from_thread, to: handoff.to_thread, createdAt: handoff.created_at, confirmedAt: handoff.confirmed_at })),
     };
   }
@@ -1669,19 +1711,18 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   /**
-   * Slices count from the last confirmed handoff. A handoff is confirmed when
-   * its new session starts its first slice; only then does the counter reset.
+   * A session is one orchestrator thread: its slices count, nobody else's. A new
+   * orchestrator — after a handoff or a fresh discovery/delivery launch — starts
+   * from zero, and a thread that handed off never starts another slice. The
+   * handoff is confirmed when the new session starts its first slice.
    */
   function sessionOf(airdId: string, threadId: string | null) {
     const handoffs = q.handoffs.all(airdId);
-    const lastConfirmed = [...handoffs].reverse().find((handoff) => handoff.confirmed_at !== null);
-    const watermark = lastConfirmed?.slice_watermark ?? 0;
     return {
       handoffs,
-      fromHere: threadId ? handoffs.find((handoff) => handoff.confirmed_at === null && handoff.from_thread === threadId) ?? null : null,
+      fromHere: threadId ? handoffs.find((handoff) => handoff.from_thread === threadId) ?? null : null,
       toHere: threadId ? handoffs.find((handoff) => handoff.confirmed_at === null && handoff.to_thread === threadId) ?? null : null,
-      watermark,
-      slices: q.sliceCount.get(airdId, watermark)?.n ?? 0,
+      slices: threadId ? q.sliceCount.get(airdId, threadId)?.n ?? 0 : 0,
     };
   }
 
@@ -2288,7 +2329,11 @@ export default async function plugin(bb: BbPluginApi) {
         const ignored = modelRequest && !(model ?? "").toLowerCase().includes(modelRequest.trim().toLowerCase())
           ? ` Запрошенная модель «${modelRequest}» не применена: её нет у провайдера или роль закреплена пользователем.`
           : "";
-        return `Агент \`${title}\` запущен: @thread:${thread.id} (threadId ${thread.id}, ${provider}, модель ${model ?? "по умолчанию"}, effort ${effort ?? "по умолчанию"}).${ignored} Дождись результата: sf_wait_agents({ threadIds: ["${thread.id}"] }).`;
+        const idle = await continuationCandidates(threadId, role, thread.id).catch(() => []);
+        const hint = idle.length
+          ? `\n\nУ этого AIRD уже есть свободный агент той же роли: ${idle.join(", ")}. Если следующая задача продолжает его работу (следующая проба того же сервиса, пробел в его документе, следующая фаза его анализа) — sf_continue_agent({ threadId, task }) вместо нового агента: новый заново читает бриф, пакет и источники.`
+          : "";
+        return `Агент \`${title}\` запущен: @thread:${thread.id} (threadId ${thread.id}, ${provider}, модель ${model ?? "по умолчанию"}, effort ${effort ?? "по умолчанию"}).${ignored} Дождись результата: sf_wait_agents({ threadIds: ["${thread.id}"] }).${hint}`;
       } catch (error) {
         return { content: [{ type: "text", text: `Не удалось запустить агента: ${String(error)}` }], isError: true };
       }

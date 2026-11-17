@@ -252,12 +252,14 @@ export const airdDetailSchema = z.object({
     problem: z.string().nullable(),
     recorded: z.number(),
   }),
-  /** Session budget since the last confirmed handoff. */
+  /** The current orchestrator session: its slices, context and handoffs; agents of the whole AIRD. */
   session: z.object({
     slices: z.number(),
     limit: z.number(),
     threadId: z.string().nullable(),
     contextPct: z.number().nullable(),
+    /** Agents launched for this AIRD and follow-ups sent to them instead of new agents. */
+    agents: z.object({ started: z.number(), continued: z.number() }),
     handoffs: z.array(z.object({ from: z.string(), to: z.string(), createdAt: z.number(), confirmedAt: z.number().nullable() })),
   }),
 });

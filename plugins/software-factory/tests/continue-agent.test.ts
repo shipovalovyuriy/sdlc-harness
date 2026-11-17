@@ -72,5 +72,22 @@ test('an agent can be continued in its own thread; waiting returns its new answe
     assert.equal(foreign.isError, true); assert.match(text(foreign), /не агент этого AIRD/);
     const leak = await call('sf_continue_agent', { threadId: 'agent-1', task: `посмотри ${join(dir, 'acceptance-copy')}/acceptance` });
     assert.equal(leak.isError, true); assert.match(text(leak), /приёмочным тестам/);
+
+    // A new agent of a role that already has an idle, small one: the answer names it and the continuation.
+    const second = await call('sf_spawn_agent', { role: 'debugger', task: 'Проба R-06: повтори код отказа', label: 'R-06' });
+    assert.equal(second.isError, undefined, text(second));
+    assert.match(text(second), /свободный агент той же роли: @thread:agent-1 \(«debugger · пробы», 50 тыс\. токенов\)/);
+    assert.match(text(second), /sf_continue_agent/);
+    // Busy or too large agents are not offered; another role gets no hint.
+    usage.set('agent-1', { usedTokens: 320_000, modelContextWindow: 475_000, estimated: false });
+    status.set('agent-2', 'active');
+    const third = await call('sf_spawn_agent', { role: 'debugger', task: 'Проба R-07', label: 'R-07' });
+    assert.doesNotMatch(text(third), /свободный агент/);
+    const explorer = await call('sf_spawn_agent', { role: 'explorer', task: 'разведка кода' });
+    assert.doesNotMatch(text(explorer), /свободный агент/);
+
+    // «Где мы» counts new agents and continuations of this AIRD.
+    const detail: any = await harness.behavior.callRpc('aird_detail', { id: 'fixture' });
+    assert.deepEqual(detail.session.agents, { started: 4, continued: 1 });
   } finally { await harness.lifecycle.dispose(); rmSync(dir, { recursive: true, force: true }); }
 });
