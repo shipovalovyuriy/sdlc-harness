@@ -1,6 +1,6 @@
 ---
 name: aird-delivery-loop
-description: "Explicit ARiD/AIRD delivery loop for implementing an existing AIRD package through lean orchestration and independent verification subagents. Use only when the user explicitly invokes $aird-delivery-loop, says AIRD/ARiD delivery, or asks to execute workorders from an existing AIRD package. The orchestrator implements sequential slices itself and starts implementation workers only on two justifications: actual parallel execution of large, dependency-ready slices with disjoint write sets, or its own context reaching 60% with substantive work left. Runs fail-closed backend runtime and migration-upgrade checks, tests, code review, QA, browser checks for web apps, usability checks for UX flows, and fix loops until DoD/quality gates pass. Context is disposable, disk is memory: checkpoint every slice and proactively hand the root task over after six slices or near 70% context."
+description: "Explicit ARiD/AIRD delivery loop for implementing an existing AIRD package through lean orchestration and independent verification subagents. Use only when the user explicitly invokes $aird-delivery-loop, says AIRD/ARiD delivery, or asks to execute workorders from an existing AIRD package. Routes coherent implementation slices to suitable cheaper configured workers, including sequential work; also delegates for actual parallelism or context headroom. Keeps decisions, integration and independent verification in the orchestrator. Runs fail-closed backend runtime and migration-upgrade checks, tests, code review, QA, browser checks for web apps, usability checks for UX flows, and fix loops until DoD/quality gates pass. Context is disposable, disk is memory: checkpoint every slice and proactively hand the root task over after six slices or near 70% context."
 ---
 
 # AIRD Delivery Loop
@@ -15,8 +15,8 @@ that share one integration boundary, one finding-group fix cycle, or one
 restricted closure (never fix and closure in the same slice).
 After checkpointing a slice, the main session may continue automatically with
 the next dependency-compatible slice while the hard context-stop conditions
-below remain false. The wave is the acceptance/dependency unit; it is not
-permission to spawn sequential isolated workers for its workorders.
+below remain false. The wave is the acceptance/dependency unit. Route each substantive slice by the
+Independence Rules; avoid a new agent for every edit or command.
 
 The core rule that keeps token spend sane: **no long-lived all-remembering orchestrator.** Everything durable lives in files (`STATE.md`, `REVIEW-MANIFEST.json`, `.continue-here.md`, workorders, evidence files); the orchestrator context is a disposable working buffer. A fresh session continues from `STATE.md`, the review manifest, and the selected wave—not parent chat history.
 
@@ -31,7 +31,7 @@ The core rule that keeps token spend sane: **no long-lived all-remembering orche
   `.continue-here.md` (from `assets/templates/continue-here.md`) and end the
   current root task. The next task continues from disk. Never rely on
   compaction to carry state.
-- **Workers exist for actual parallelism, or for context headroom.** The orchestrator implements slices itself; the two spawn justifications are defined once, in Independence Rules below. Give a justified worker the workorder file, named AIRD doc paths, and standards refs—never the parent transcript.
+- **Workers handle coherent implementation on a suitable cheaper model, parallel work, or context headroom.** The three spawn justifications are defined once, in Independence Rules below. Give a justified worker the workorder file, named AIRD doc paths, and standards refs—never the parent transcript.
 - **The orchestrator never holds raw bulk.** Full logs, screenshots, and file contents live on disk; the orchestrator holds verdicts, counts, and paths.
 - **The delivery root owns only its wave.** A user request outside the accepted wave (a new feature, UI polish, research) goes to a separate Codex task so the root never accumulates its context. If the user insists on doing it here, make the planned handoff (Context Budget rule 7) first.
 
@@ -258,17 +258,18 @@ runnable ownership slice over mechanical one-file fragmentation.
 
 ## Independence Rules
 
-- Do not spawn an implementation worker for a single ready workorder or a sequence of workorders. The orchestrator executes that work directly.
-- Spawn an implementation worker on either of exactly two justifications:
-  1. **Actual parallelism.** At least two large, substantive slices are dependency-ready and can run concurrently with disjoint write sets. The orchestrator may execute one concurrent slice; run at most two implementation workers at once. Stop spawning as soon as only one ready slice remains.
-  2. **Context headroom.** The orchestrator's own context, as measured at the last checkpoint (Context Budget rule 7), is at or above 60% and a substantive slice remains — spawn even though that slice is the only one ready. Executing slices in the orchestrator is what keeps sequential work cheap, and it is also what accumulates the diffs, opened files, and test output the operating model says must not be held. Checkpointing tells you to discard slice-local detail; a fresh worker context is what actually guarantees it. The hard stops at 100% context and auto-compaction are recovery, not routing: by then the expensive part already happened.
-- Below 60% with one ready slice, the orchestrator implements it. Above 60%, hand it off and keep the orchestrator as a compact router. Record which of the two justifications applied in the delivery brief.
-- Do not spawn a worker for a purely mechanical closure: exact lock/count updates, snapshots, fixtures, imports, formatting, deterministic test expectation updates, AIRD evidence/checkpoints, or an adjacent path-scope correction that changes no production behavior. The orchestrator handles one coherent mechanical finding group as its own bounded slice and records the same evidence.
-- A fix is not mechanical when it changes production source behavior, architecture, auth/security/privacy, persisted data or migrations, public/runtime contracts, concurrency, or requires domain judgment. That classification increases review and verification depth; it does not by itself justify a worker. Keep the fix with the orchestrator unless it satisfies one of the two spawn justifications.
+- Spawn an implementation worker when at least one of these reasons applies:
+  1. **Economic model routing.** A substantive, bounded implementation slice can be executed by the configured worker on a cheaper suitable model, while the orchestrator handles decisions, integration and review. This applies to a single sequential slice too. Compare the configured roles, not hardcoded model names; user model choices win. If suitability or relative cost is unknown, do not claim savings. Deterministic state/evidence updates stay in the orchestrator; substantive product edits go to a scoped worker.
+  2. **Actual parallelism.** At least two substantive slices are dependency-ready with disjoint write sets. Run at most two implementation workers concurrently, and stop adding parallel workers when one ready slice remains.
+  3. **Context headroom.** The orchestrator's context measured at the last checkpoint is at or above 60% with substantive work left. Delegate the next slice even if it is the only ready one; retain the hard stops in Context Budget.
+- Record the applicable reason (`economic-routing`, `parallelism`, or `context-headroom`) in the delivery brief. Below 60%, execute directly when worker orientation would outweigh the task and economic routing does not apply. Do not turn planning, each command, or every small edit into another agent.
+- Do not spawn a worker for a purely mechanical closure: exact lock/count updates, snapshots, fixtures, imports, formatting, deterministic test expectation updates, AIRD evidence/checkpoints, or an adjacent path-scope correction that changes no production behavior. The orchestrator handles deterministic metadata/evidence updates; product tests and fixtures stay with their scoped implementer or independent test author. Do not cross the acceptance firewall.
+- Product source behavior, security, persisted data, contracts and concurrency fixes belong to a bounded implementation worker. Continue its existing thread when it still has budget and owns this scope; otherwise pass a checkpoint to a fresh worker. The orchestrator owns coordination, integration and evidence, not substantive product implementation.
 - If an impact-radius omission is discovered only after a worker ran, do not spawn another agent merely to compensate. Record a fix workorder and repair the scoped test/fixture closure locally when deterministic; return to discovery when the missing scope changes the accepted product or architecture contract.
 - Pass only the workorder path, the named AIRD doc paths, and standards refs; never pass the parent transcript. Spawn it with `fork_turns: "none"` (`fork_turns`, not `fork_context`, is the supported spawn field).
-- A worker's cost grows with the square of its length: every step re-sends everything it has read, printed and thought. Its brief keeps reads bounded (`rg -n`, then `sed -n` windows of at most 80 lines; only the named doc sections and the standards file for its language; long output to a file with a `tail` on screen). In Software Factory a delivery worker has a budget of about 100 actions: past it Factory tells the worker to commit what is green and write `evidence/<WO>-progress.md`, and the worker returns `Статус: частично`. Start a fresh worker for the remainder with the workorder path and that note only; it reads the files the note names, not the whole design again. The restart costs one short orientation; the long worker would have paid its whole context on every remaining step (eval `worker-action-budget`).
-- When a fix of a worker's own workorder is delegated at all (one of the two justifications holds), it goes back to that worker as a continuation while its context is small: the worker already holds the code and the tests. In Software Factory this is `sf_continue_agent`, which refuses at 300K tokens or 60%.
+- Long workers repeatedly process their growing history. Use the budget injected by Factory rather than assuming a fixed context percentage. At a checkpoint request save the working-tree revision, uncommitted paths, completed work, remaining work and executed checks in `evidence/<WO>-progress.md`; commit only when authorized. Finish before a successor writes the same scope. In standalone execution, warn at 60 actions/120k context and checkpoint at 80 actions/160k or 50% of the window, whichever comes first; unavailable measurements remain unknown. These are pilot defaults, not an optimal-cost claim.
+- Before spawning, name one coherent subtask with files/write scope, completion condition and focused checks. If the workorder is large, keep its acceptance boundary and divide execution into such subtasks inside the existing workorder; use its existing progress note for handoff. Finish and verify a coherent part before starting the next. The 100-action signal is a backstop, not a target or permission to stop mid-edit.
+- When a fix of a worker's own workorder is delegated at all (one of the three reasons holds), it goes back to that worker as a continuation while its context is small: the worker already holds the code and the tests. In Software Factory use `sf_continue_agent` before creating a new thread; it refuses at 300K tokens or 60%. Continue only the same concrete task/scope, not an unrelated task with the same role. A budget-exhausted worker needs a fresh successor. If `sf_spawn_agent` finds a small idle worker for the same workorder, continue it, or supply `freshReason` explaining the distinct subtask or need for a clean context.
 - Do not send follow-up work to a worker whose context is already large (about 300K+ tokens) for a fix of a few dozen lines: start a fresh narrow worker with the finding path, or fix it in the orchestrator when the fix is mechanical and the orchestrator is below 60%.
 - The `test-author` of the Blind Acceptance Protocol is a verification spawn at wave pre-flight, outside the two implementation-worker justifications. It shares no worktree, brief, or transcript with any implementer, and returns the same six fixed fields as any verifier (suite commit in `paths`, red-first counts through `numbers`).
 - In Software Factory every subagent, the `test-author` included, starts through `sf_spawn_agent`, never as a built-in subagent: Factory picks its provider (the test author goes to the other one), shows it and counts its tokens. A workspace of several repositories is supported: the suite gets a repository of its own next to the workspace copy, the wave base is one commit per changed repository, and `run.sh <target-dir>` receives the workspace root. One delivery ran its test author as a built-in Opus subagent because Factory refused a multi-repository wave; it cost 31.5M tokens of the Claude limit.
@@ -357,7 +358,7 @@ resume instead of spawning a duplicate.
 
 ### 2. Route Implementation Execution
 
-Apply the spawn gate (Independence Rules) before role routing; the orchestrator implements a sole ready slice itself. For a slice eligible under either justification, route by frontmatter `surface`: `backend-worker` for backend/data/infra runtime work, `frontend-worker` for frontend, and `worker` for mixed/tooling/docs. Use `debugger` for a required bug-isolation pass and `cybersec` for an explicitly required security review; those specialist gates do not turn a sequential implementation workorder into a worker spawn. Do not route by keyword matches in the body.
+Apply the three delegation reasons in Independence Rules before role routing. For an eligible slice, route by frontmatter `surface`: `backend-worker` for backend/data/infra runtime work, `frontend-worker` for frontend, and `worker` for mixed/tooling/docs. Use `debugger` for a required bug-isolation pass and `cybersec` for an explicitly required security review; those specialist gates do not turn a sequential implementation workorder into a worker spawn. Do not route by keyword matches in the body.
 
 Standards via `$code-review-standards` — with a hard cap. Every subagent already pays a ~28K-token spawn tax (permissions instructions + AGENTS.md) before reading anything; do not add a 25K standards pile on top. Rules:
 
@@ -392,7 +393,7 @@ blockers, evidence pointers, and exact next action; create follow-up workorders
 for unresolved blockers. This ends the slice, not automatically the root task.
 If no hard-stop condition is true, rehydrate the compact next-slice brief from
 disk and continue with the next dependency-compatible workorder or wave
-verification, spawning a worker only when one of the two spawn justifications
+verification, spawning a worker only when one of the three delegation reasons
 is satisfied.
 
 ### Review Scheduling Policy
@@ -499,7 +500,8 @@ earlier waves' rows. Future-wave rows do not block it.
    implementation notes, evidence, or a diff. Record branch, worktree path,
    immutable pre-flight base commit, suite commit, and red-first verdict in `.continue-here.md`; a resumed
    session that finds a suite commit for the wave does not respawn.
-2. **Suite contract.** Tests live in `acceptance/<slug>/` of that worktree,
+2. **Suite contract.** For policy-2 packages, confirm `verification_inputs` and `verification_environment` in STATE.md from the actual configured runtime; do not invent a stable environment identity.
+    Tests live in `acceptance/<slug>/` of that worktree,
    drive only public boundaries, one test per `AS-NN`.
    `acceptance/<slug>/run.sh <absolute target-dir>` resolves its own paths from
    its directory, runs the suite against the checkout at the target, and writes
@@ -515,6 +517,7 @@ earlier waves' rows. Future-wave rows do not block it.
    implementation proceeds, and red-first must run before step 5.
 4. **Firewall.** Do not open any file under the acceptance worktree except
    `results.json` — and from it only `id`, `status`, `expected`, `actual`.
+   Preparation failures use `phase: "preparation"` and cannot prove red-first. Results reaching their actual assertion use `phase: "assertion"`; missing phase remains legacy-compatible.
    The runner also checks `note: "pre-existing: <reason>"` for baseline passes.
    Do not ask for test code, fixtures, or stack traces. Implementer tests are
    author checks; they never close this gate.
@@ -530,7 +533,7 @@ earlier waves' rows. Future-wave rows do not block it.
    cycle: the gate's evidence is the run on the final tree. The suite must be
    committed before running; changing it invalidates prior red-first evidence,
    so repeat red-first on the recorded base before judging the new suite.
-6. **A failed scenario is a code defect by default.** Register the finding and
+6. **A failed assertion after successful preparation is a potential implementation defect. A declared preparation failure is blocked evidence, not proof of a product defect.** Verify that the result reached its assertion, then register the finding and
    fix it from «scenario, expected, actual» alone. It closes on the suite
    re-run, not on a restricted closure reviewer — its hunks are covered by the
    wave's broad review — and each re-run counts as a revision attempt. You may
@@ -621,7 +624,7 @@ For each verification finding:
    product behavior, architecture, security, persisted data, or requires a
    multi-step implementation slice. Both locations stay outside discovery's
    immutable `workorders/` and do not invalidate accepted hashes.
-3. Choose the smallest executor per Independence Rules: the orchestrator fixes the coherent finding group locally, mechanical or not; a production-behavior change or specialist judgment raises review depth, it does not justify a worker.
+3. Route substantive product fixes to the existing scoped worker while it has budget, otherwise a fresh worker with a checkpoint. The orchestrator may update state/evidence and deterministic metadata; do not create an agent per mechanical operation. Apply the same routing in Independence Rules and initial implementation.
 4. Re-run only impacted author tests after each fix. Do not spawn reviewer/QA
    while sibling fixes from the same finding group remain open, except for
    the restricted dispute ruling in the Blind Acceptance Protocol. After the
@@ -702,7 +705,7 @@ contract):
    ```bash
    node "${CODEX_HOME:-$HOME/.codex}/skills/public/aird-delivery-loop/assets/scripts/aird-metrics.mjs" \
      ".agent/aird/<feature-slug>" --kind delivery --wave W1 --runtime codex --outcome complete \
-     --extra '{"workers_spawned": 0, "worker_reasons": {"parallelism": 0, "context": 0}, "gates": {"first_pass": 6}, "findings": {"fix_cycles": 1, "max_revision_attempts": 1, "escalations": 0}, "discovery_defects": {"impact_radius_misses": 0, "proxy_probes": 0, "oversized_workorders": 0, "consumes_gaps": 0}, "package_rework_files": 0, "plan_deviations": 0, "auto_compactions": 0}'
+     --extra '{"workers_spawned": 0, "worker_reasons": {"economic_routing": 0, "parallelism": 0, "context": 0}, "gates": {"first_pass": 6}, "findings": {"fix_cycles": 1, "max_revision_attempts": 1, "escalations": 0}, "discovery_defects": {"impact_radius_misses": 0, "proxy_probes": 0, "oversized_workorders": 0, "consumes_gaps": 0}, "package_rework_files": 0, "plan_deviations": 0, "auto_compactions": 0}'
    ```
 
    Pass through `--extra` only what the orchestrator alone knows from its
@@ -752,3 +755,7 @@ responses. Use a final checkpoint response only when pausing for a hard context
 boundary, an external blocker, or a required user decision; report only the
 slice/workorder, verdict, evidence path, blockers, and exact next action. Do
 not recap earlier closed workorders.
+
+## Efficiency behavior checks
+
+When changing execution routing or budgets, evaluate the scenarios in `references/evals/efficiency.md`. They do not launch additional agents during ordinary delivery.

@@ -99,3 +99,17 @@ message, do not start other threads, and follow the task report format. If none 
 
 - `bb software-factory list [--json]` — AIRDs by project with status and stage.
 - `bb software-factory show <aird-id|slug> [--json]` — one AIRD in detail.
+
+## Budget and evidence recovery
+
+New delivery workers use policy 2. Respect the injected warning/checkpoint request;
+finish the current bounded part and record the requested checkpoint frontmatter.
+Do not continue an exhausted worker or start a successor while it still owns the scope.
+`freshReason` does not bypass write ownership. An ambiguous transfer is recovered by
+Factory from thread metadata; never substitute a direct BB spawn to bypass it.
+
+Keep product implementation with its scoped worker. Use existing small idle contexts
+for related work and fresh contexts only for a different scope or exhausted budget.
+Preparation-phase acceptance failures are blocked evidence; return the scenario to its
+independent author. Two identical preparation failures stop automatic retries;
+`retryReason` must describe a concrete environment change, not merely "try again".

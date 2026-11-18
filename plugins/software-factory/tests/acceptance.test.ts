@@ -70,3 +70,19 @@ test('a suite that never ran is reported once as an environment or suite failure
   assert.doesNotMatch(verdict.text, /теста нет в наборе/);
   assert.doesNotMatch(verdict.text, /\/secret\/|report\.mjs/);
 });
+
+test('preparation failures cannot establish red-first or blame product assertions', () => {
+ const run = { exitCode: 1, error: null, log: '', results: [{ id: 'AS-01', status: 'failed' as const, phase: 'preparation' as const, expected: 'queued', actual: 'daily attempts exhausted' }] };
+ for (const kind of ['baseline', 'wave'] as const) {
+  const result = assessRun(run, [{id:'AS-01',then:'queued'}], kind, new Set(['AS-01']));
+  assert.equal(result.status,'error'); assert.match(result.text,/подготовка не завершена/);
+ }
+});
+
+test('identical preparation loops stop, changed fixture errors and assertion failures do not misclassify', async () => {
+ const {repeatedPreparationFailure}=await import('../src/acceptance.ts');
+ const row={status:'error',results:JSON.stringify([{id:'AS-01',phase:'preparation',actual:'daily quota'}])};
+ assert.equal(repeatedPreparationFailure([row,row]),true);
+ assert.equal(repeatedPreparationFailure([row,{...row,results:row.results!.replace('daily quota','service unavailable')}]),false);
+ assert.equal(repeatedPreparationFailure([row,{...row,status:'failed'}]),false);
+});

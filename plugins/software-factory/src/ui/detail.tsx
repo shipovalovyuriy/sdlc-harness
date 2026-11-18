@@ -1,3 +1,4 @@
+import { PROFILE_DESCRIPTIONS } from "../process-policy";
 // One AIRD: stage track, workorders (DAG + bug/not-bug marking), gates,
 // agent threads and commits. Clicking anything opens the details panel.
 import { useCallback, useMemo, useState } from "react";
@@ -14,6 +15,8 @@ import {
   WO_STATUS_LABELS,
   errorText,
   formatTokens,
+  sinceText,
+  TONE_COLORS,
   HEAVY_AGENT_TOKENS,
   relativeTime,
   shortPath,
@@ -158,7 +161,8 @@ function DetailBody({
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-xl font-semibold">{s.title}</h2>
             <Pill tone={statusTone(s.status)}>{statusLabel(s.status)}</Pill>
-            {s.profile ? <Chip>{s.profile}</Chip> : null}
+            {data.now?.working ? <NowChip now={data.now} /> : null}
+            {s.profile ? <span title={PROFILE_DESCRIPTIONS[s.profile] ?? s.profile}><Chip>{s.profile}</Chip></span> : null}
             {s.archived ? <Chip>в архиве</Chip> : null}
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -325,6 +329,36 @@ function BackButton({ onBack }: { onBack: () => void }) {
   );
 }
 
+/**
+ * What is going on right now, in one line next to the status. A thread whose
+ * turn ended can still be working in the background (a long test run, a wait
+ * for other threads); the hover shows every item and the orchestrator's last
+ * message, a click opens the thread.
+ */
+function NowChip({ now }: { now: NonNullable<AirdDetail["now"]> }) {
+  const { open } = useInspect();
+  const first = now.items[0]!;
+  const label = first.kind === "background" ? `в фоне: ${first.text}` : `${first.title}${first.text !== "работает" ? ` — ${first.text}` : ""}`;
+  const details = [
+    ...now.items.map((item) => `${item.title} · ${item.kind === "background" ? "в фоне" : "работает"}: ${item.text}${item.since ? ` · ${sinceText(item.since)}` : ""}`),
+    ...(now.orchestrator?.message ? ["", `Оркестратор${now.orchestrator.at ? `, ${sinceText(now.orchestrator.at)} назад` : ""}: ${now.orchestrator.message}`] : []),
+  ].join("\n");
+  return (
+    <button
+      type="button"
+      title={details}
+      onClick={() => open({ kind: "thread", threadId: first.threadId })}
+      className="inline-flex max-w-[28rem] cursor-pointer items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs hover:bg-state-hover"
+      style={{ borderColor: `${TONE_COLORS.info}55`, color: TONE_COLORS.info }}
+    >
+      <Dot tone="info" pulse />
+      <span className="truncate">{label}</span>
+      {first.since ? <span className="shrink-0 opacity-70">{sinceText(first.since)}</span> : null}
+      {now.items.length > 1 ? <span className="shrink-0 opacity-70">+{now.items.length - 1}</span> : null}
+    </button>
+  );
+}
+
 function Section({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
   return (
     <section className="space-y-2.5 rounded-xl border border-border bg-card p-4">
@@ -370,7 +404,7 @@ function OverviewTab({ data, onTab, onMetrics }: { data: AirdDetail; onTab: (tab
   const openBlockers = data.blockers.filter((b) => !b.resolved);
   const openFindings = data.findings.filter((f) => !f.closed);
   const bugs = data.workorders.filter((w) => w.label === "bug").length + data.fixes.filter((f) => f.label === "bug").length;
-  const runningAgents = data.threads.filter((t) => ["active", "starting", "pending"].includes(t.status)).length;
+  const runningAgents = data.threads.filter((t) => isRunningThread(t.status)).length;
   const selectedStage = current?.kind === "stage" ? current.stageId : null;
   const selectedRef = current?.kind === "ref" ? current.ref : null;
   const selectedDoc = current?.kind === "doc" ? current.path : null;
@@ -411,6 +445,9 @@ function OverviewTab({ data, onTab, onMetrics }: { data: AirdDetail; onTab: (tab
         </button>
       </div>
       </div>
+
+      {data.efficiency ? <p className="text-sm text-muted-foreground">Результат: {({ accepted: "принят", blocked: "заблокирован", in_progress: "ещё не принят" })[data.efficiency.outcome]}. Календарное время всех попыток: {data.efficiency.calendarMs === null ? "нет данных" : `${Math.round(data.efficiency.calendarMs / 60_000)} мин`}, включая ожидания. Расход ниже включает незавершённые и неудачные попытки.</p> : null}
+      {data.session.tokens?.byModel ? <UsageSection usage={data.session.tokens} /> : null}
 
       <div className="grid gap-4 @4xl:grid-cols-2">
         <Section title="Где мы">
@@ -479,7 +516,7 @@ function OverviewTab({ data, onTab, onMetrics }: { data: AirdDetail; onTab: (tab
                     </Pill>
                   ))}
                   {data.session.tokens && data.session.tokens.total > 0 ? (
-                    <span className="text-muted-foreground" title="Сумма токенов всех тредов AIRD по провайдерам">
+                    <span className="text-muted-foreground" title="Измеренные токены всех тредов AIRD и доступных вложенных агентов. Детализация по моделям — выше.">
                       токенов: {formatTokens(data.session.tokens.total)}
                       {data.session.tokens.byProvider.length > 1
                         ? ` (${data.session.tokens.byProvider.map((part) => `${part.provider} ${formatTokens(part.tokens)}`).join(" · ")})`
@@ -522,10 +559,6 @@ function OverviewTab({ data, onTab, onMetrics }: { data: AirdDetail; onTab: (tab
               <p className="mt-2 whitespace-pre-wrap">{data.request}</p>
             </details>
           ) : null}
-        </Section>
-
-        <Section title={data.inputs.length > 0 ? `Материалы (${data.inputs.length})` : "Материалы"}>
-          <MaterialsSection data={data} id={s.id} />
         </Section>
 
         <Section title={`Блокеры (${openBlockers.length} открыто)`}>
@@ -583,30 +616,44 @@ function OverviewTab({ data, onTab, onMetrics }: { data: AirdDetail; onTab: (tab
             </div>
           )}
         </Section>
-        <Section title="Артефакты пакета">
-          {data.artifacts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Пакет ещё не создан — discovery создаст его в {shortPath(s.packagePath)}.</p>
-          ) : (
-            <div className="grid grid-cols-1 gap-0.5 @md:grid-cols-2">
-              {data.artifacts.map((artifact) => (
-                <button
-                  key={artifact.name}
-                  type="button"
-                  disabled={!artifact.exists}
-                  onClick={() => open({ kind: "doc", path: artifact.name })}
-                  className={cn(
-                    "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-state-hover disabled:cursor-default disabled:opacity-50",
-                    selectedDoc === artifact.name && "bg-state-active",
-                  )}
-                >
-                  <Icon name={artifact.exists ? "FileText" : "FileQuestion"} fallback="File" className="size-3.5 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate font-mono">{artifact.name}</span>
-                  <span className="text-muted-foreground">{artifact.status}</span>
-                </button>
-              ))}
+        <details className="group min-w-0 self-start rounded-xl border border-border bg-card p-4">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+            <Icon name="ChevronRight" className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+            <span className="min-w-0 flex-1">Материалы и артефакты</span>
+            <span className="shrink-0 text-xs font-normal text-muted-foreground" title="Материалы и существующие документы пакета">{data.inputs.length + data.artifacts.filter((artifact) => artifact.exists).length}</span>
+          </summary>
+          <div className="mt-4 space-y-4">
+            <div className="space-y-2.5">
+              <h4 className="text-xs font-medium text-muted-foreground">Материалы ({data.inputs.length})</h4>
+              <MaterialsSection data={data} id={s.id} />
             </div>
-          )}
-        </Section>
+            <div className="space-y-2.5 border-t pt-3">
+              <h4 className="text-xs font-medium text-muted-foreground">Документы пакета</h4>
+              {data.artifacts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Пакет ещё не создан — discovery создаст его в {shortPath(s.packagePath)}.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-0.5 @md:grid-cols-2">
+                  {data.artifacts.map((artifact) => (
+                    <button
+                      key={artifact.name}
+                      type="button"
+                      disabled={!artifact.exists}
+                      onClick={() => open({ kind: "doc", path: artifact.name })}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-xs hover:bg-state-hover disabled:cursor-default disabled:opacity-50",
+                        selectedDoc === artifact.name && "bg-state-active",
+                      )}
+                    >
+                      <Icon name={artifact.exists ? "FileText" : "FileQuestion"} fallback="File" className="size-3.5 text-muted-foreground" />
+                      <span className="min-w-0 flex-1 truncate font-mono">{artifact.name}</span>
+                      <span className="text-muted-foreground">{artifact.status}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </details>
       </div>
     </div>
   );
@@ -616,6 +663,43 @@ function OverviewTab({ data, onTab, onMetrics }: { data: AirdDetail; onTab: (tab
 
 type LabelFilter = "all" | "bug" | "task";
 type WorkorderView = "mindmap" | "graph" | "table";
+
+function UsageSection({ usage }: { usage: NonNullable<AirdDetail["session"]["tokens"]> }) {
+  const count = (value: number | null) => value === null ? "н/д" : formatTokens(value);
+  const duration = (value: number | null) => value === null ? "н/д" : value >= 3_600_000 ? `${(value / 3_600_000).toFixed(1)} ч` : `${Math.round(value / 60_000)} мин`;
+  return (
+    <Section title="Расход по моделям">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-medium">{formatTokens(usage.total)} обработано</span>
+        <Pill tone={usage.partial ? "warn" : "neutral"}>{usage.partial ? "частичные данные" : "данные получены"}</Pill>
+        {usage.native && usage.native.detected > 0 ? <span className="text-muted-foreground">вложенные агенты: учтено {usage.native.measured}/{usage.native.detected}</span> : null}
+        {usage.missingThreads ? <span className="text-muted-foreground">без счётчика: {usage.missingThreads} тредов</span> : null}
+      </div>
+      {usage.timing ? <p className="text-xs text-muted-foreground">Окно завершённых ходов: {duration(usage.timing.observedWindowMs)} · без двойного счёта параллельных ходов: {duration(usage.timing.occupiedMs)}{usage.timing.incomplete ? " · измерение неполное" : ""}. Включает ожидания внутри хода; это не чистое время генерации и не срок до принятия результата. От зафиксированного лимита до следующего запуска: {duration(usage.timing.providerWaitMs)}; незавершённых ожиданий лимита: {usage.timing.openProviderWaits}. Остальные причины ожидания не определены.</p> : null}
+      <div className="max-w-full overflow-x-auto">
+        <table className="w-full text-left text-xs tabular-nums">
+          <caption className="sr-only">Токены по моделям. Кеш и свежий ввод показаны отдельно; время — сумма длительностей работы агентов.</caption>
+          <thead className="text-muted-foreground">
+            <tr>{["Модель", "Свежий ввод", "Чтение кеша", "Запись кеша", "Вывод", "Всего", "Время работы"].map((label) => <th key={label} className="whitespace-nowrap px-3 py-2 font-medium first:pl-0">{label}</th>)}</tr>
+          </thead>
+          <tbody>
+            {(usage.byModel ?? []).map((part) => (
+              <tr key={`${part.provider}/${part.model}`} className="border-t">
+                <th scope="row" className="min-w-44 px-0 py-2 pr-3 font-normal">
+                  <span className="break-all font-medium">{part.model ?? "Модель не сообщена"}{part.partial ? " *" : ""}</span>
+                  <span className="block text-muted-foreground">{part.provider}{part.nativeSources ? ` · вложенных: ${part.nativeSources}` : ""}</span>
+                </th>
+                {[part.freshInput, part.cacheRead, part.cacheWrite, part.output, part.total].map((value, i) => <td key={i} className="whitespace-nowrap px-3 py-2" title={value === null ? "Провайдер не сообщил данные" : value.toLocaleString()}>{count(value)}</td>)}
+                <td className="whitespace-nowrap px-3 py-2">{duration(part.durationMs)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground">Время суммируется по агентам, включая параллельную работу. * — часть данных недоступна. Токены включают повторную обработку истории и кеш; стоимость и расход лимита подписки не рассчитаны: провайдеры не сообщают тарифы и вес моделей в лимите.</p>
+    </Section>
+  );
+}
 
 function readView(): WorkorderView {
   try {
@@ -890,7 +974,7 @@ function AgentRow({ thread, depth }: { thread: AgentThread; depth: number }) {
             <span title="Токены треда: каждый шаг заново отправляет весь накопленный контекст">{formatTokens(thread.tokens)} токенов</span>
           </Pill>
         ) : null}
-        {thread.budgetSignalAt ? <Pill tone="info">бюджет исчерпан — завершает с запиской</Pill> : null}
+        {thread.executionState && thread.executionState !== "running" ? <Pill tone={thread.executionState === "transferring" ? "warn" : "info"}>{({ checkpoint_requested: "ожидается checkpoint", checkpoint_ready: "checkpoint сохранён", transferring: "передача: требуется подтверждение", transferred: "передан преемнику" } as Record<string, string>)[thread.executionState] ?? thread.executionState}</Pill> : thread.budgetSignalAt ? <Pill tone="info">бюджет исчерпан — завершает с запиской</Pill> : null}
         {(thread.sessions?.length ?? 0) > 1 ? <Pill tone="warn">запасная · {thread.sessions!.length} сессии</Pill> : null}
         {thread.recovery ? <span className="text-xs text-muted-foreground">{thread.recovery.reason}</span> : null}
         {thread.skills.map((skill) => (
@@ -899,7 +983,16 @@ function AgentRow({ thread, depth }: { thread: AgentThread; depth: number }) {
           </Chip>
         ))}
       </span>
-      <span className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+      <span className="ml-auto flex min-w-0 items-center gap-3 text-xs text-muted-foreground">
+        {thread.activity?.background.length ? (
+          <span className="min-w-0 truncate" style={{ color: TONE_COLORS.info }} title={thread.activity.background.map((task) => task.description).join("\n")}>
+            {thread.activity.background[0]!.description} · {sinceText(thread.activity.background[0]!.startedAt)}
+          </span>
+        ) : thread.activity?.command ? (
+          <span className="min-w-0 truncate font-mono" title={thread.activity.command.text}>
+            {thread.activity.command.text}
+          </span>
+        ) : null}
         <span>{THREAD_STATUS_LABELS[thread.status] ?? thread.status}</span>
         <span>{relativeTime(thread.createdAt)}</span>
         <span onClick={(event) => event.stopPropagation()}>

@@ -354,3 +354,7 @@ comparison, fired signals, and either the generated proposals (id + one-line
 essence + what user decision is needed) or an explicit «системных отклонений
 нет». Numbers live in the metrics record; the block states meaning, not tables
 of raw values.
+
+## Outcome efficiency
+
+Compare accepted outcomes with their complete attempt history, including failed attempts. Preserve blocked/cancelled/in-progress runs in the report. Separate calendar time from summed agent durations and union of active intervals. Classify waiting only from actual events; unknown time stays unknown. Report fresh input, cache read/write and output separately, never translate context size into spend. Add optional `defect_origin: implementation|test_preparation|contract|environment|unknown` to findings without rewriting legacy `root_cause` values. Historical replay tests accounting, not counterfactual savings. Economic evaluation needs comparable completed tasks, fixed policy/model versions, sample counts and quality results; do not claim savings from an unfinished run.

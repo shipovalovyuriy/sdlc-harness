@@ -40,7 +40,7 @@ or specialist-judgment fix raises review depth, not routing. Pass paths, never
 the parent transcript, and spawn with `fork_turns: "none"`.
 
 - Execution mode (`orchestrator-local` / `fresh-worker`):
-- Spawn justification (`parallelism` / `context-headroom` / n/a):
+- Spawn justification (`economic-routing` / `parallelism` / `context-headroom` / n/a):
 - Selected role `agent_type` (fresh-worker only):
 - Exact fix workorder path to pass:
 - Exact AIRD doc paths to pass:

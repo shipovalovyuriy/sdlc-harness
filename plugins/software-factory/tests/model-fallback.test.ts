@@ -178,9 +178,14 @@ test('cross-provider transfer preserves full brief and worktree, stops the sourc
     await f.done('agent-2', 'Новый итог');
     const result = await f.harness.behavior.callAgentTool('sf_wait_agents', { threadIds: [id], timeoutSeconds: 10 }, { threadId: 'orch' });
     assert.match(text(result), /Новый итог/); assert.doesNotMatch(text(result), /старый частичный ответ/);
+    for (const [threadId, value] of [[id, 100], ['agent-2', 200]] as const) {
+      f.records.get(threadId)!.push({ seq: 1000, type: 'thread/tokenUsage/updated', data: { tokenUsage: { total: { totalTokens: value } } } });
+    }
     const detail: any = await f.harness.behavior.callRpc('aird_detail', { id: 'fixture' });
     assert.equal(detail.threads.filter((row: any) => row.kind === 'agent').length, 1);
     assert.equal(detail.session.agents.started, 1);
+    assert.equal(detail.session.tokens.total, 300, 'accounting includes the hidden fallback source as well as its replacement');
+    assert.deepEqual(detail.session.tokens.byProvider, [{ provider: 'codex', tokens: 200 }, { provider: 'claude-code', tokens: 100 }]);
     const continued = await f.harness.behavior.callAgentTool('sf_continue_agent', { threadId: id, task: 'Продолжи исследование' }, { threadId: 'orch' });
     assert.equal(continued.isError, undefined, text(continued));
     assert.equal((f.harness.inspection.sdk.callsTo('threads.send').at(-1)?.[0] as any).threadId, 'agent-2');

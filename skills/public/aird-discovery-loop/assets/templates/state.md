@@ -2,6 +2,14 @@
 aird_state_version: '4.0'
 # discovery_profile is required by aird-validate.mjs: lite | standard | deep
 discovery_profile: standard
+efficiency_policy: 2
+# Populate from the actual risk assessment; unknown risk is not an empty list.
+risk_flags: []
+profile_reason: ''
+# Workspace-relative config/lock/dependency files not covered by the target revision.
+verification_inputs: []
+# Describe the actual runtime/environment revision before acceptance.
+verification_environment: ''
 package_class: product
 # status: discovery | ready_for_delivery | in_delivery | implementation_complete | verifying | ready_for_release | complete | paused
 status: discovery

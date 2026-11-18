@@ -36,3 +36,7 @@ Selection rule:
 - Revision after an artifact, plan, patch, or verification report is produced; escalation when automation lacks information or a loop stalls; abort for destructive risk, impossible prerequisites, or invalid state.
 
 Discussion and prototype gates are recorded in `08-quality-gates.md` under escalation gates, and their open items live in `00-discussion-log.md`. Validator output is derived data — read it, act on it, do not copy its counts into prose. The discovery loop has no separate "discovery workorder" artifact: an unmet prerequisite becomes an open question in `00-discussion-log.md` plus a note in `STATE.md`. Fix workorders and finding notes are delivery concepts (`aird-delivery-loop/assets/templates/`).
+
+## Evidence validity
+
+Reuse a verification result only when all declared inputs, command/suite revision, target revisions (including dirty content), scope and relevant environment are unchanged. Unknown dependencies require a rerun. Runtime/time-dependent evidence may expire without a code change. The full final acceptance on the final implementation remains mandatory. Preparation errors produce blocked evidence; they do not justify changing product behavior. An independent ruling is still required to change an assertion or accepted scenario. After two identical preparation failures without new evidence, stop automatic retries and diagnose the shared cause.

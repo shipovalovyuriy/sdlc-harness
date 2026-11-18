@@ -10,6 +10,7 @@ export interface ScenarioResult {
   expected: string | null;
   actual: string | null;
   note?: string | null;
+  phase?: "preparation" | "assertion";
 }
 
 export interface SuiteRun {
@@ -69,6 +70,7 @@ function readResults(dir: string): ScenarioResult[] {
   return parsed.map((item) => ({
     id: item.id,
     status: item.status === "passed" ? "passed" : item.status === "failed" ? "failed" : "skipped",
+    phase: item.phase === "preparation" ? "preparation" : item.phase === "assertion" ? "assertion" : undefined,
     expected: clip(item.expected), actual: clip(item.actual ?? item.message), note: clip(item.note),
   }));
 }
@@ -157,6 +159,7 @@ export function assessRun(
     const r = byId.get(scenario.id);
     if (!r && noResults) continue;
     if (!r || r.status === "skipped") { blocked.push(`${scenario.id}: ${r ? "пропущен" : "теста нет в наборе"}`); continue; }
+    if (r.phase === "preparation") { blocked.push(`${scenario.id}: подготовка не завершена; это не доказательство дефекта продукта и не red-first. ${scrub(r.actual)}`); continue; }
     const newOnBase = kind === "baseline" && currentIds.has(scenario.id);
     if (newOnBase) {
       if (r.status === "failed" || (r.status === "passed" && /^pre-existing:\s*\S/iu.test(r.note ?? ""))) matched++;
@@ -188,4 +191,17 @@ export function assessRun(
 
 export function verdictText(results: ScenarioResult[], scenarios: { id: string; then: string | null }[], acceptanceFolder: string): string {
   return assessRun({ results, exitCode: 0, error: null, log: "" }, scenarios, "wave", new Set(), acceptanceFolder).text;
+}
+
+/** Only identical, evidenced preparation failures stop automatic retries. Assertions still use defect handling. */
+export function repeatedPreparationFailure(runs: Array<{ status: string; results: string | null }>): boolean {
+  const signature = (run: {status:string;results:string|null}) => {
+    if (run.status !== 'error') return null;
+    try {
+      const rows = JSON.parse(run.results ?? '[]') as ScenarioResult[];
+      if (!Array.isArray(rows) || !rows.some(r => r.phase === 'preparation')) return null;
+      return JSON.stringify(rows.filter(r => r.phase === 'preparation').map(r => [r.id,r.actual]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));
+    } catch { return null; }
+  };
+  return runs.length >= 2 && signature(runs[0]!) !== null && signature(runs[0]!) === signature(runs[1]!);
 }

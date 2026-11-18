@@ -29,6 +29,7 @@ import {
   parseBlockList,
   parseExistentialRisks,
   parseFrontmatter,
+  profilePolicyProblem,
   parseGateDodMapping,
   parseStateBlockers,
   parseStateFindings,
@@ -230,6 +231,8 @@ const statePath = join(packageDir, 'STATE.md');
 if (!existsSync(statePath)) fail(`STATE.md missing in ${packageDir}`);
 const stateText = read(statePath);
 const state = parseFrontmatter(stateText);
+const policyProblem = profilePolicyProblem(state);
+if (policyProblem) err(policyProblem);
 const status = state.status;
 if (!Object.keys(state).length) warn('STATE.md has no YAML frontmatter block');
 if (!status) err('STATE.md frontmatter has no `status`');

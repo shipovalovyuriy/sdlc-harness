@@ -13,6 +13,22 @@ import {
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+
+export function profilePolicyProblem(state) {
+  if (state.efficiency_policy === undefined) return null;
+  if (Number(state.efficiency_policy) !== 2) return 'Unknown efficiency_policy';
+  if (!Array.isArray(state.risk_flags) || typeof state.profile_reason !== 'string' || !state.profile_reason.trim()) return 'Policy 2 requires risk_flags and profile_reason';
+  const levels = { lite: 0, standard: 1, deep: 2 };
+  const risks = { security: 2, migration: 2, schema: 2, multi_service: 2, external_unknown: 2, public_contract: 1, cross_layer: 1 };
+  const level = levels[state.discovery_profile];
+  if (!Object.hasOwn(levels, state.discovery_profile)) return 'Profile must be lite, standard or deep';
+  for (const flag of state.risk_flags) {
+    if (!Object.hasOwn(risks, flag)) return `Unknown risk_flag: ${flag}`;
+    if (level < risks[flag]) return `${state.discovery_profile} profile is insufficient for ${flag}`;
+  }
+  return null;
+}
+
 export const EXECUTABLE_KINDS = new Set(['implementation', 'spike']);
 export const NON_IMPLEMENTATION_KINDS = new Set(['evidence', 'verification', 'review']);
 export const WORKORDER_KINDS = new Set([...EXECUTABLE_KINDS, ...NON_IMPLEMENTATION_KINDS]);
@@ -528,6 +544,8 @@ export function acceptWave(packageDir, { wave, baseRef }) {
 
   const statePath = join(packageDir, 'STATE.md');
   const state = existsSync(statePath) ? parseFrontmatter(readFileSync(statePath, 'utf8')) : {};
+  const policyProblem = profilePolicyProblem(state);
+  if (policyProblem) throw new Error(policyProblem);
   const profile = state.discovery_profile;
   const activeCount = workorders.filter((workorder) =>
     workorder.frontmatter.aird_workorder_schema_version === '4.0'

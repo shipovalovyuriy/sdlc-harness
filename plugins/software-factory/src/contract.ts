@@ -202,6 +202,15 @@ export const agentThreadSchema = z.object({
   tokens: z.number().nullish(),
   /** When Factory told this delivery worker its action budget was spent. */
   budgetSignalAt: z.number().nullish(),
+  executionState: z.string().nullish(),
+  /** What the thread is doing: background tasks that outlive its turn, the command in flight, its last message. */
+  activity: z.object({
+    background: z.array(z.object({ description: z.string(), startedAt: z.number() })),
+    command: z.object({ text: z.string(), startedAt: z.number() }).nullable(),
+    lastMessage: z.string().nullable(),
+    lastMessageAt: z.number().nullable(),
+    lastEventAt: z.number().nullable(),
+  }).nullish(),
 });
 export type AgentThread = z.infer<typeof agentThreadSchema>;
 
@@ -269,6 +278,7 @@ export const airdDetailSchema = z.object({
     recorded: z.number(),
   }),
   /** The current orchestrator session: its slices, context and handoffs; agents of the whole AIRD. */
+  efficiency: z.object({ outcome: z.enum(["accepted", "blocked", "in_progress"]), acceptedAt: z.number().nullable(), calendarMs: z.number().nullable() }).optional(),
   session: z.object({
     slices: z.number(),
     limit: z.number(),
@@ -276,12 +286,27 @@ export const airdDetailSchema = z.object({
     contextPct: z.number().nullable(),
     /** Agents launched for this AIRD and follow-ups sent to them instead of new agents. */
     agents: z.object({ started: z.number(), continued: z.number() }),
-    /** Tokens of all threads of this AIRD, by provider. */
-    tokens: z.object({ total: z.number(), byProvider: z.array(z.object({ provider: z.string(), tokens: z.number() })) }).optional(),
+    /** Observed processing of all AIRD threads, including superseded fallback sources and measured native agents. */
+    tokens: z.object({
+      total: z.number(), byProvider: z.array(z.object({ provider: z.string(), tokens: z.number() })),
+      byModel: z.array(z.object({
+        provider: z.string(), model: z.string().nullable(), sources: z.number(), nativeSources: z.number(),
+        total: z.number().nullable(), freshInput: z.number().nullable(), cacheRead: z.number().nullable(), cacheWrite: z.number().nullable(), output: z.number().nullable(),
+        durationMs: z.number().nullable(), partial: z.boolean(),
+      })).optional(),
+      timing: z.object({ observedWindowMs: z.number().nullable(), occupiedMs: z.number().nullable(), providerWaitMs: z.number().nullable(), openProviderWaits: z.number(), agentMs: z.number().nullable(), incomplete: z.boolean() }).optional(),
+      missingThreads: z.number().optional(), native: z.object({ detected: z.number(), measured: z.number() }).optional(), partial: z.boolean().optional(),
+    }).optional(),
     /** The latest subscription-limit state each provider reported (allowed / warning / blocked) and when its window resets. */
     limits: z.array(z.object({ provider: z.string(), status: z.string(), window: z.string().nullable(), resetsAt: z.number().nullable(), reportedAt: z.number() })).optional(),
     handoffs: z.array(z.object({ from: z.string(), to: z.string(), createdAt: z.number(), confirmedAt: z.number().nullable() })),
   }),
+  /** Right now: running threads, background tasks, and the latest orchestrator message. */
+  now: z.object({
+    working: z.boolean(),
+    items: z.array(z.object({ threadId: z.string(), role: z.string(), title: z.string(), kind: z.enum(["running", "background"]), text: z.string(), since: z.number().nullable() })),
+    orchestrator: z.object({ threadId: z.string(), status: z.string(), message: z.string().nullable(), at: z.number().nullable(), lastEventAt: z.number().nullable() }).nullable(),
+  }).optional(),
 });
 export type AirdDetail = z.infer<typeof airdDetailSchema>;
 
@@ -585,6 +610,7 @@ export const acceptanceSchema = z.object({
   branch: z.string().nullable(),
   wave: z.string().nullable(),
   gate: z.enum(["untested", "passed", "failed", "blocked"]),
+  evidenceState: z.enum(["valid", "stale", "missing", "blocked"]).optional(),
   baselineVerdict: z.string().nullable(),
   hasSuite: z.boolean(),
   /** The suite the test author registered: exactly what runs, against which base and working copy. */

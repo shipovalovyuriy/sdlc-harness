@@ -173,7 +173,8 @@ export const STAGE_TONES: Record<StageState, Tone> = {
 };
 
 export function threadTone(status: string): Tone {
-  if (["active", "starting", "pending", "stopping"].includes(status)) return "info";
+  if (["active", "starting", "pending", "stopping", "background"].includes(status)) return "info";
+  if (status === "waiting") return "neutral";
   if (status === "error") return "bad";
   if (status === "deleted") return "neutral";
   return "good";
@@ -185,9 +186,20 @@ export const THREAD_STATUS_LABELS: Record<string, string> = {
   pending: "в очереди",
   stopping: "останавливается",
   idle: "готов",
+  background: "в фоне",
+  waiting: "ждёт",
   error: "ошибка",
   deleted: "удалён",
 };
+
+/** How long ago, briefly: «3 мин», «1 ч 20 мин». */
+export function sinceText(at: number | null | undefined): string {
+  if (!at) return "";
+  const minutes = Math.max(0, Math.round((Date.now() - at) / 60_000));
+  if (minutes < 1) return "только что";
+  if (minutes < 60) return `${minutes} мин`;
+  return `${Math.floor(minutes / 60)} ч ${minutes % 60} мин`;
+}
 
 /** Tokens as people read them: 58 млн, 850 тыс. */
 export function formatTokens(value: number | null | undefined): string {
@@ -241,7 +253,7 @@ export function shortPath(path: string): string {
 
 // ------------------------------------------------------------- agent activity
 
-const RUNNING_THREAD = new Set(["active", "starting", "pending", "stopping"]);
+const RUNNING_THREAD = new Set(["active", "starting", "pending", "stopping", "background"]);
 
 export function isRunningThread(status: string): boolean {
   return RUNNING_THREAD.has(status);

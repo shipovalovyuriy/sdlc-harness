@@ -51,7 +51,7 @@ is not "thorough" — it is a half-day that delivery will have to throw away.
 
 Scale the package to the task. The full set is the ceiling, not a mandate for every feature:
 
-- User-facing work: produce the UX block (`02-*`) and the minimal one-pass UI prototype (phase 4.5).
+- User-facing work: produce the UX contract needed by the changed flow. In policy-2 lite packages, a local change to an existing screen references the existing UI and verifies affected states; no new prototype is required unless interaction, layout direction or a new flow is undecided. New flows retain the UX/prototype gate.
 - Non-UI work (backend refactor, data/tooling change): skip the `02-*` UX block entirely — do not write a UX-framing filler. UX framing is required only for user-facing changes, same as the UI spec and prototype.
 - Small, low-risk features: keep each document concise (a short PRD, a few risk lines, a lean TRD) rather than merging files. `$aird-delivery-loop` reads `01-prd.md`, `03-risk-register.md`, `04-trd.md`, `07-implementation-plan.md`, `08-quality-gates.md`, and `09-dod.md` by name, so keep those filenames even when their content is minimal. Concise is fine; shallow is not. Note the reduced scope in `STATE.md`.
 
@@ -124,6 +124,8 @@ Create or update `00-intake.md` and initialize `STATE.md` from `assets/templates
 
 - `discovery_profile`: `lite` (localized reversible change, ≤5 implementation workorders), `standard` (cross-layer or single-service contract, ≤12), or `deep` (security, infrastructure, migrations, multi-service/API/data, high-impact rollout; ≤25; one accepted wave may hold the whole budget). Risk and irreversibility override change size — see `references/delivery-contract.md`.
 - `package_class`: `product` or `supporting`.
+
+For newly created packages set `efficiency_policy: 2`, `risk_flags` (an explicit list, empty only after checking), and a short `profile_reason` in STATE.md. Use `references/delivery-contract.md#Efficiency policy 2` for routing. Do not upgrade existing accepted packages implicitly.
 
 Then record:
 
@@ -1227,3 +1229,7 @@ End the response with the «Улучшение процесса» block required
 their comparison against previous AIRD runs, fired signals, and the generated
 proposals that need a user decision — or an explicit «системных отклонений
 нет».
+
+## Efficiency behavior checks
+
+When changing profile routing, use the local reversible, auth/migration and multi-service scenarios in `references/evals/efficiency.md`; evaluation is separate from ordinary discovery.

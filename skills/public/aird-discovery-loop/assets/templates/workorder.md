@@ -183,3 +183,7 @@ Never add a table or seventh field. Detailed results and numeric values belong
 in evidence, not in the chat response. A silent or vacuous result is a failure.
 
 If this workorder does not fully determine the design, STOP: make no architectural decisions, implement nothing speculative, and report the gap as a blocker so the main session can route it back to `architect`/discovery.
+
+## Bounded execution
+
+Name one observable result, exact verification, and the named source sections needed. A useful continuation reuses the same scoped worker while it has budget. A checkpoint preserves partial work without changing accepted scope or claiming completion. For a policy-2 lite edit to an existing UI with no new interaction direction, use the existing `prototype_not_applicable` field with the existing-screen reference; retain affected-state browser verification.

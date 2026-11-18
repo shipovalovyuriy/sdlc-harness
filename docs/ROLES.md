@@ -52,9 +52,9 @@ The loops are deliberately stingy about spawning:
 - Check file-writing tools before assigning authorship. A read-only specialist
   supplies analysis; `docs` receives the scoped authoring brief and named
   source sections. Keep the specialist's permissions unchanged.
-- The orchestrator implements sequential slices itself; implementation workers
-  exist only for actual parallelism (two dependency-ready slices with disjoint
-  write sets) or context headroom (orchestrator at/above ~60% context).
+- The orchestrator coordinates implementation and handles mechanical closure.
+  Delegate coherent work for cost, parallelism across disjoint write sets, or
+  context headroom. Continue an existing worker when the scope and budget fit.
 - Workers receive the workorder path, named AIRD doc sections, and standards
   references — never the parent transcript.
 - Verifiers work from diffs and return fixed-field verdicts; screenshots and

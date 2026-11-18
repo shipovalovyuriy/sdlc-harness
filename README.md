@@ -101,9 +101,10 @@ Phases, in risk order (depth is earned by retired risk, not spent in advance):
 1. **Pre-flight** — validate the manifest and base freshness, select the
    earliest accepted wave, build a one-page delivery brief, spot-check impact
    radius and plumbing with bounded searches.
-2. **Bounded execution slices** — the orchestrator implements sequentially and
-   checkpoints after every slice; implementation workers are spawned only for
-   actual parallelism or context headroom. Write sets stay disjoint.
+2. **Bounded execution slices** — the orchestrator coordinates, integrates
+   and checkpoints each slice. Workers take coherent implementation tasks when
+   the cost, parallelism or available context justifies delegation. Write sets
+   stay disjoint.
 3. **Integration and review scheduling** — at most one broad reviewer pass per
    integrated wave; finding groups get restricted closure passes, never fresh
    broad reviews.

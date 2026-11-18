@@ -1,6 +1,6 @@
 import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFakePluginHost, makeThreadResponse } from '@get-bb/plugin-sdk/testing';
@@ -21,18 +21,19 @@ test('Factory shows tokens per agent and tells a long delivery worker to checkpo
       get: async ({ threadId }: any) => makeThreadResponse({ id: threadId, providerId: 'claude-code', status: threadId.startsWith('worker') ? 'active' : 'idle' }),
       list: async () => [], send: async () => ({}),
       events: {
-        list: async ({ threadId, types, afterSeq }: any) => {
-          if (types?.[0] === 'thread/tokenUsage/updated') {
-            return tokens.has(threadId) ? [{ seq: 1, type: types[0], data: { tokenUsage: { total: { totalTokens: tokens.get(threadId) } } } }] : [];
+        list: async ({ threadId, types, afterSeq, limit }: any) => {
+          if (Number(limit) > 100) throw new Error('HTTP 400: Thread event limit cannot exceed 100');
+          if (types?.includes('thread/tokenUsage/updated')) {
+            return tokens.has(threadId) ? [{ seq: 1, type: 'thread/tokenUsage/updated', data: { tokenUsage: { total: { totalTokens: tokens.get(threadId) } } } }] : [];
           }
           if (types?.[0] === 'provider/rateLimits/updated') {
             if (threadId === 'worker-long') return [{ seq: 2, createdAt: Date.now() - 60_000, data: { rateLimits: { providerId: 'claude-code', status: 'warning', windows: [{ label: 'Five-hour limit', status: 'warning', resetsAtMs: Date.now() + 3600_000 }] } } }];
             if (threadId === 'worker-short') return [{ seq: 2, createdAt: Date.now() - 600_000, data: { rateLimits: { providerId: 'claude-code', status: 'allowed', windows: [{ label: 'Five-hour limit', status: 'allowed', resetsAtMs: Date.now() + 3600_000 }] } } }];
             return [];
           }
-          if (afterSeq) return [];
           const n = actions.get(threadId) ?? 0;
-          return Array.from({ length: n * 2 }, (_, i) => ({ seq: i + 1, type: 'item/completed', data: { item: { type: i % 2 ? 'reasoning' : 'commandExecution' } } }));
+          const all = Array.from({ length: n * 2 }, (_, i) => ({ seq: i + 1, type: 'item/completed', data: { item: { type: i % 2 ? 'reasoning' : 'commandExecution' } } }));
+          return all.filter((row) => !afterSeq || row.seq > Number(afterSeq)).slice(0, Number(limit));
         },
       },
     },
@@ -70,4 +71,46 @@ test('Factory shows tokens per agent and tells a long delivery worker to checkpo
     mock.timers.reset();
     await harness.lifecycle.dispose(); rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('policy-2 worker budgets survive reload, retry failed notification and use fresh absolute context', async () => {
+ const dir=mkdtempSync(join(tmpdir(),'sf-budget-v2-')); let actions=60, failSend=true, sent=0;
+ let snapshot={usedTokens:30_000,modelContextWindow:1_000_000,snapshot:{capturedAt:new Date().toISOString()}};
+ mock.timers.enable({apis:['setInterval']});
+ const {bb,harness}=createFakePluginHost({pluginId:'software-factory',settings:{worktreeRoot:join(dir,'worktrees')},sdk:{
+  threads:{get:async()=>({...makeThreadResponse({id:'worker',status:'active'}),contextWindowUsage:snapshot}),send:async()=>{if(failSend)throw new Error('temporary failure');sent++;return {};},events:{list:async({afterSeq,limit}:any)=>Array.from({length:actions},(_,i)=>({seq:i+1,data:{item:{type:'commandExecution'}}})).filter(r=>r.seq>Number(afterSeq??0)).slice(0,Number(limit))}},
+ } as any});
+ try {
+  await plugin(bb);const db=bb.storage.database();
+  db.prepare(`INSERT INTO threads(thread_id,aird_id,role,kind,stage,title,created_at) VALUES('worker','fixture','backend-worker','agent','delivery','WO-01',?)`).run(Date.now());
+  db.prepare(`INSERT INTO worker_execution(thread_id) VALUES('worker')`).run();
+  mock.timers.tick(60_000);await flush();
+  assert.equal((db.prepare(`SELECT warned_at FROM worker_execution`).get() as any).warned_at,null);
+  failSend=false;mock.timers.tick(60_000);await flush();assert.equal(sent,1);
+  const reloaded = await harness.lifecycle.reload(plugin);
+  const currentDb = reloaded.bb.storage.database();
+  mock.timers.tick(60_000);await flush();assert.equal(sent,1,'warning is durable');
+  snapshot={...snapshot,usedTokens:160_000};
+  mock.timers.tick(60_000);await flush();assert.equal(sent,2,'context triggers checkpoint below action limit');
+  assert.equal((currentDb.prepare(`SELECT state FROM worker_execution`).get() as any).state,'checkpoint_requested');
+  assert.ok((currentDb.prepare(`SELECT budget_signal_at FROM threads`).get() as any).budget_signal_at);
+  mock.timers.tick(60_000);await flush();assert.equal(sent,2);
+ } finally {mock.timers.reset();await harness.lifecycle.dispose();rmSync(dir,{recursive:true,force:true});}
+});
+
+test('checkpoint does not release write ownership while stop remains unconfirmed',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'sf-checkpoint-stop-'));const pkg=join(dir,'.agent/aird/demo');mkdirSync(join(pkg,'evidence'),{recursive:true});
+ let status='active',stops=0;mock.timers.enable({apis:['setInterval']});
+ const {bb,harness}=createFakePluginHost({pluginId:'software-factory',sdk:{threads:{get:async()=>makeThreadResponse({id:'worker',status:status as any}),stop:async()=>{stops++;status='stopping';return {};}}} as any});
+ try{
+  await plugin(bb);const db=bb.storage.database();
+  db.prepare(`INSERT INTO airds(id,project_id,folder,slug,title,created_at,work_folder) VALUES('a','p',?,'demo','Demo',0,?)`).run(dir,dir);
+  db.prepare(`INSERT INTO threads(thread_id,aird_id,role,kind,stage,title,created_at,budget_signal_at,refs) VALUES('worker','a','worker','agent','delivery','Worker',0,?,'["WO-01"]')`).run(Date.now()-180_000);
+  db.prepare(`INSERT INTO worker_execution(thread_id,state) VALUES('worker','checkpoint_requested')`).run();
+  writeFileSync(join(pkg,'evidence/WO-01-progress.md'),'---\ncheckpoint_source: worker\ncheckpoint_revision: abc\ncheckpoint_dirty_paths: []\ncheckpoint_completed: [part]\ncheckpoint_remaining: [verify]\ncheckpoint_checks: ["not run: unavailable"]\n---\n');
+  mock.timers.tick(60_000);await flush();assert.equal(stops,1);
+  assert.equal((db.prepare(`SELECT state FROM worker_execution`).get() as any).state,'checkpoint_requested');
+  status='idle';mock.timers.tick(60_000);await flush();
+  assert.equal((db.prepare(`SELECT state FROM worker_execution`).get() as any).state,'checkpoint_ready');
+ }finally{mock.timers.reset();await harness.lifecycle.dispose();rmSync(dir,{recursive:true,force:true});}
 });

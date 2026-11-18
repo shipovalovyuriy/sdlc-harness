@@ -47,3 +47,5 @@ these six one-line fields, with no table and no extra prose:
 4. `numbers: <evidence/path#counts | none>`
 5. `evidence: <paths | none>`
 6. `blockers: <none | concise blocker>`
+
+Budget comes from Factory when present. On checkpoint request preserve current revisions, dirty paths, completed work, remaining steps and checks in the requested note; use its requested frontmatter. Commit only if authorized. Stop before a successor writes this scope; never treat a partial checkpoint as accepted delivery.

@@ -166,6 +166,7 @@ export function AcceptanceTab({ data: aird }: { data: AirdDetail }) {
         </p>
       )}
       <ErrorText>{actionError ?? error}</ErrorText>
+      {data.evidenceState ? <p className="text-xs text-muted-foreground">Доказательство: {({valid:"актуально для текущих входов",stale:"устарело — входы проверки изменились",missing:"ещё не получено",blocked:"недостаточно для принятия"})[data.evidenceState]}. Полная финальная приёмка остаётся обязательной.</p> : null}
       {data.baselineVerdict ? <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{data.baselineVerdict}</p> : null}
       {greenOnBase.length > 0 ? (
         <p className="rounded-lg px-3 py-2 text-sm" style={{ backgroundColor: `${TONE_COLORS.warn}14`, color: TONE_COLORS.warn }}>

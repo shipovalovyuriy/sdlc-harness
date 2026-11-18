@@ -37,6 +37,7 @@ test('an agent can be continued in its own thread; waiting returns its new answe
 
     const first = await call('sf_spawn_agent', { role: 'debugger', task: 'Проба R-01: запусти пробный клиент API', label: 'пробы' });
     assert.equal(first.isError, undefined, text(first));
+    await harness.behavior.emitThreadEvent('thread.idle', { thread: thread('agent-1', 'idle'), lastAssistantText: 'R-01 proven' });
     outputs.set('agent-1', 'R-01 proven (старый ответ)');
     usage.set('agent-1', { usedTokens: 120_000, modelContextWindow: 475_000, estimated: false });
 
@@ -74,7 +75,10 @@ test('an agent can be continued in its own thread; waiting returns its new answe
     assert.equal(leak.isError, true); assert.match(text(leak), /приёмочным тестам/);
 
     // A new agent of a role that already has an idle, small one: the answer names it and the continuation.
-    const second = await call('sf_spawn_agent', { role: 'debugger', task: 'Проба R-06: повтори код отказа', label: 'R-06' });
+    const duplicate = await call('sf_spawn_agent', { role: 'debugger', task: 'WO-02: повтори код отказа', workorders: ['WO-02'] });
+    assert.equal(duplicate.isError, true); assert.match(text(duplicate), /sf_continue_agent/);
+    assert.match(text(duplicate), /Новый агент пока не создан/); assert.equal(spawned, 1);
+    const second = await call('sf_spawn_agent', { role: 'debugger', task: 'Проба R-06: повтори код отказа', label: 'R-06', workorders: ['WO-02'], freshReason: 'Независимая проба другого endpoint' });
     assert.equal(second.isError, undefined, text(second));
     assert.match(text(second), /свободный агент той же роли: @thread:agent-1 \(«debugger · пробы», 50 тыс\. токенов\)/);
     assert.match(text(second), /sf_continue_agent/);
@@ -89,5 +93,8 @@ test('an agent can be continued in its own thread; waiting returns its new answe
     // «Где мы» counts new agents and continuations of this AIRD.
     const detail: any = await harness.behavior.callRpc('aird_detail', { id: 'fixture' });
     assert.deepEqual(detail.session.agents, { started: 4, continued: 1 });
+    db.prepare(`UPDATE threads SET budget_signal_at=1 WHERE thread_id='agent-1'`).run();
+    const exhausted = await call('sf_continue_agent', { threadId: 'agent-1', task: 'ещё одна правка' });
+    assert.equal(exhausted.isError, true); assert.match(text(exhausted), /исчерпал бюджет/);
   } finally { await harness.lifecycle.dispose(); rmSync(dir, { recursive: true, force: true }); }
 });

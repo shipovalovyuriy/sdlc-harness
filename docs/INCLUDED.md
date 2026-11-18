@@ -80,8 +80,8 @@ The contract lives at
 3. Produce the AIRD package, accept the first wave, review the discovery
    summary.
 4. Run `$aird-delivery-loop` / `/aird-delivery-loop`.
-5. The orchestrator implements slices; workers spawn only for parallelism or
-   context headroom.
+5. The orchestrator coordinates bounded slices and routes substantive
+   implementation to workers where delegation is justified.
 6. Reviewer, QA, browser, security, and usability gates run as required, all
    fail-closed with evidence.
 7. Fixes loop until the Definition of Done is satisfied.

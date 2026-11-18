@@ -41,13 +41,17 @@ import {
 import { airdCommits, commitDetail, commitsByHash, isGitFolder, packageCommitRefs, workspaceCommits } from "./src/git";
 import { readEval, readMetrics } from "./src/metrics";
 import { acceptanceBase, acceptanceSuiteRevision, deliveryRevision, ensureAcceptanceWorktree, ensureWorkspaceCheckout, ensureWorktree, gitDirs, gitText, isLinkedWorktree, migrateWorktreeToClone, nestedRepos, pushBranch, refreshAcceptanceWorktree, repoOfPath, withBaselineCheckout, ensureSuiteRepository, expandHome, isWorkspaceBase, parseWorkspaceBase, withWorkspaceBaseline, workspaceBase, workspaceRevision, type WorkspaceRepo } from "./src/worktree";
-import { assessRun, hasSuite, runSuite, selectScenarioScope, type ScenarioResult, type SuiteRun } from "./src/acceptance";
+import { repeatedPreparationFailure, assessRun, hasSuite, runSuite, selectScenarioScope, type ScenarioResult, type SuiteRun } from "./src/acceptance";
 import { LETTERS, answerSummary, parseTextQuestion, providerQuestion, textAnswer } from "./src/questions";
 import { SECRET_NAME, secretLines, type SecretInfo } from "./src/project-secrets";
 import { briefSections, sectionsMarkdown } from "./src/sections";
 import { SLICE_LIMIT, allowedTargets, appendTransition, historyProblem, readTransitions, setField, sliceDecision, type Transition } from "./src/lifecycle";
 import { inputLines, inputParts, inputsNamedIn, listInputs, removeInput, saveInput, type InputFile, type InputPart } from "./src/inputs";
 import { modelFallback } from "./src/model-fallback";
+import { verificationIdentity, evidenceState } from "./src/evidence-validity";
+import { profileProblem } from "./src/process-policy";
+import { EXECUTION_POLICY, decideExecutionBudget, scopesOverlap, checkpointProblem } from "./src/execution-budget";
+import { usageCollector } from "./src/usage";
 import {
   rpcContract,
   type AgentThread,
@@ -343,8 +347,15 @@ export default async function plugin(bb: BbPluginApi) {
     `CREATE TABLE fallback_jobs (request_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, root_id TEXT NOT NULL, cycle TEXT NOT NULL, event TEXT NOT NULL, action TEXT NOT NULL, status TEXT NOT NULL, due_at INTEGER NOT NULL, reason TEXT NOT NULL, target_thread TEXT, from_provider TEXT, from_model TEXT, to_provider TEXT, to_model TEXT, created_at INTEGER NOT NULL)`,
     `CREATE INDEX fallback_jobs_pending ON fallback_jobs(status,due_at)`,
     `ALTER TABLE threads ADD COLUMN budget_signal_at INTEGER`,
+    `CREATE TABLE worker_execution (thread_id TEXT PRIMARY KEY, policy INTEGER NOT NULL DEFAULT 2, warned_at INTEGER, state TEXT NOT NULL DEFAULT 'running', checkpoint TEXT, successor TEXT)`,
   ]);
 
+  const execution = {
+    get: db.prepare<[string], { thread_id: string; policy: number; warned_at: number | null; state: string; checkpoint: string | null; successor: string | null }>(`SELECT * FROM worker_execution WHERE thread_id = ?`),
+    insert: db.prepare(`INSERT OR IGNORE INTO worker_execution(thread_id) VALUES (?)`),
+    warn: db.prepare(`UPDATE worker_execution SET warned_at = ? WHERE thread_id = ?`),
+    checkpoint: db.prepare(`UPDATE worker_execution SET state = 'checkpoint_requested' WHERE thread_id = ?`),
+  };
   const withThreadDefaults = (row: Record<string, unknown>) => ({ refs: null, stage_node: null, task: null, provider: null, model: null, effort: null, ...row });
   const q = {
     airdById: db.prepare<[string], AirdRow>(`SELECT * FROM airds WHERE id = ?`),
@@ -374,7 +385,7 @@ export default async function plugin(bb: BbPluginApi) {
     ),
     markBudgetSignal: db.prepare(`UPDATE threads SET budget_signal_at = ? WHERE thread_id = ?`),
     budgetCandidates: db.prepare<[number], ThreadRow>(
-      `SELECT * FROM threads WHERE kind = 'agent' AND stage = 'delivery' AND budget_signal_at IS NULL AND role IN ('backend-worker', 'frontend-worker', 'worker') AND created_at > ?`,
+      `SELECT * FROM threads WHERE kind = 'agent' AND stage = 'delivery' AND budget_signal_at IS NULL AND role IN ('backend-worker', 'frontend-worker', 'worker') AND (created_at > ? OR thread_id IN (SELECT thread_id FROM worker_execution WHERE state = 'running'))`,
     ),
     continueThread: db.prepare(`UPDATE threads SET task = ?, refs = ?, continuations = coalesce(continuations, 0) + 1 WHERE thread_id = ?`),
     confirmHandoff: db.prepare(`UPDATE handoffs SET confirmed_at = ?, slice_watermark = ? WHERE id = ?`),
@@ -840,7 +851,7 @@ export default async function plugin(bb: BbPluginApi) {
       blockersOpen: (state?.blockers ?? []).filter((blocker) => !blocker.resolved).length,
       threads: {
         total: threads.length,
-        running: threads.filter((thread) => RUNNING.has(live.get(thread.thread_id)?.status ?? "")).length,
+        running: threads.filter((thread) => RUNNING.has(live.get(thread.thread_id)?.status ?? "") || hasBackground(thread.thread_id)).length,
       },
       createdAt: entry.record?.created_at ?? null,
     };
@@ -909,10 +920,15 @@ export default async function plugin(bb: BbPluginApi) {
   async function detail(id: string): Promise<AirdDetail> {
     const entry = await findEntry(id);
     const pkg = readPackage(packageDir(entry));
-    const threads = q.threadsByAird.all(entry.id).filter((thread) => fallback.current(thread.thread_id) === thread.thread_id);
+    const allThreads = q.threadsByAird.all(entry.id);
+    const threads = allThreads.filter((thread) => fallback.current(thread.thread_id) === thread.thread_id);
     const live = await liveThreads(threads.map((thread) => thread.thread_id));
-    const tokens = new Map(
-      await Promise.all(threads.map(async (thread) => [thread.thread_id, await tokensOf(thread.thread_id, RUNNING.has(live.get(thread.thread_id)?.status ?? ""))] as const)),
+    const { tokens, summary: usage } = await collectUsage(allThreads, entry.record?.work_folder ?? entry.folder);
+    const activity = new Map(
+      await Promise.all(threads.map(async (thread) => {
+        const status = live.get(thread.thread_id)?.status ?? "";
+        return [thread.thread_id, watchActivity(thread, status) ? await activityOf(thread.thread_id, RUNNING.has(status)) : null] as const;
+      })),
     );
     const summary = summarize(entry, pkg, threads, live);
     const labels = labelsFor(entry.id);
@@ -928,7 +944,13 @@ export default async function plugin(bb: BbPluginApi) {
         kind: thread.kind,
         stage: thread.stage,
         title: info?.title ?? thread.title,
-        status: fallback.isPending(thread.thread_id) ? "pending" : info?.status ?? "deleted",
+        status: fallback.isPending(thread.thread_id)
+          ? "pending"
+          : info?.status === "idle" && (activity.get(thread.thread_id)?.background.size ?? 0) > 0
+            ? "background"
+            : info?.status === "idle" && thread.kind === "orchestrator"
+              ? "waiting"
+              : info?.status ?? "deleted",
         parentThreadId: thread.parent_thread_id ? fallback.current(thread.parent_thread_id) : null,
         createdAt: thread.created_at,
         archived: info ? info.archived : true,
@@ -944,6 +966,8 @@ export default async function plugin(bb: BbPluginApi) {
         sessions: fallback.sessions(thread.thread_id),
         tokens: tokens.get(thread.thread_id) ?? null,
         budgetSignalAt: thread.budget_signal_at ?? null,
+        executionState: execution.get.get(thread.thread_id)?.state ?? null,
+        activity: activityView(activity.get(thread.thread_id) ?? null, RUNNING.has(info?.status ?? "")),
       };
     });
     const hostId = (await listProjects()).find((project) => project.id === entry.projectId)?.hostId ?? null;
@@ -984,7 +1008,13 @@ export default async function plugin(bb: BbPluginApi) {
       deliveryReposReady: reposOf(entry.record).length > 0,
       layout: entry.record && (entry.record.worktree || entry.record.repos) ? await checkLayout(entry.record) : null,
       lifecycle: lifecycleOf(entry.record, pkg.state?.status ?? "", splitFrontmatter(readText(join(packageDir(entry), "STATE.md")) ?? "").data as Record<string, unknown>),
-      session: { ...(await sessionView(entry.id, threads)), tokens: tokensByProvider(threads, tokens), limits: await providerLimits(threads) },
+      efficiency: (() => {
+        const completed = pkg.state?.status === "complete" ? q.stageEvents.all(entry.id).filter(e => e.to_status === "complete").at(-1)?.at ?? null : null;
+        const began = allThreads.length ? Math.min(...allThreads.map(t => t.created_at)) : null;
+        return { outcome: pkg.state?.status === "complete" && completed !== null ? "accepted" as const : pkg.state?.status === "paused" ? "blocked" as const : "in_progress" as const, acceptedAt: completed, calendarMs: began === null ? null : Math.max(0, (completed ?? Date.now()) - began) };
+      })(),
+      session: { ...(await sessionView(entry.id, threads)), tokens: usage, limits: await providerLimits(threads) },
+      now: nowView(agentThreads),
     };
   }
 
@@ -1031,7 +1061,7 @@ export default async function plugin(bb: BbPluginApi) {
       "",
       "## Материалы пользователя",
       "",
-      "Пользователь приложил к задаче файлы — это часть постановки (картинки приложены к этому сообщению):",
+      "Материалы пользователя — часть постановки. Ниже пути; изображения получает роль, которой нужен визуальный анализ:",
       ...inputLines(inputs, pkgRel),
       "",
       stage === "discovery"
@@ -1083,6 +1113,7 @@ export default async function plugin(bb: BbPluginApi) {
         "",
         `- slug пакета: \`${record.slug}\` → пакет пиши в \`${pkgRel}\` относительно рабочей папки.`,
         ...place,
+        "Для нового пакета: efficiency_policy: 2, risk_flags и profile_reason; lite — локальная обратимая правка без существенного риска, standard — известные границы, deep — security/migration/schema/multi_service/external_unknown. Старый принятый пакет не переклассифицируй. Не создавай роль без конкретного вопроса.",
         "Если STATE.md уже существует, начни с него и .continue-here.md; продолжай с контрольной точки, не повторяй Intake и завершённые фазы.",
         "",
         "## Запрос пользователя",
@@ -1126,7 +1157,7 @@ export default async function plugin(bb: BbPluginApi) {
     const inputs = listInputs(packageDir({ folder: record.folder, slug: record.slug, record }));
     // Secret names reach the thread through configure(), which reads this cache.
     await projectSecrets(record.project_id);
-    const first = messageInput(orchestratorPrompt(record, stage, note, inputs, layout), inputParts(inputs, project.hostId));
+    const first = messageInput(orchestratorPrompt(record, stage, note, inputs, layout), stage === "discovery" && !note ? inputParts(inputs, project.hostId) : []);
     const hostEnvironment = {
       type: "host" as const,
       hostId: project.hostId,
@@ -1305,7 +1336,13 @@ export default async function plugin(bb: BbPluginApi) {
     return (matches.find((m) => m.isDefault) ?? matches[0])?.id ?? null;
   }
 
-  async function spawnAgent(parentThreadId: string, role: string, task: string, label: string | undefined, workorders: string[] = [], modelRequest?: string) {
+  let spawnQueue = Promise.resolve();
+  function spawnAgent(...args: Parameters<typeof spawnAgentUnlocked>): ReturnType<typeof spawnAgentUnlocked> {
+    const result = spawnQueue.then(() => spawnAgentUnlocked(...args));
+    spawnQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+  async function spawnAgentUnlocked(parentThreadId: string, role: string, task: string, label: string | undefined, workorders: string[] = [], modelRequest?: string, freshReason?: string) {
     if (fallback.current(parentThreadId) !== parentThreadId) throw new Error(`Оркестратор продолжен в @thread:${fallback.current(parentThreadId)}`);
     const parentRow = q.threadById.get(parentThreadId);
     if (!parentRow || parentRow.kind !== "orchestrator") {
@@ -1340,9 +1377,76 @@ export default async function plugin(bb: BbPluginApi) {
         ...(workorders.length === 0 ? (task.slice(0, 4000).match(/\b(WO-\d+[A-Za-z]?|F-\d{2,})\b/gu) ?? []).slice(0, 6) : []),
       ]),
     ];
+    const predecessors: string[] = [];
+    // Fresh context is not permission for two writers. Unknown scopes conflict.
+    if (parentRow.stage === "delivery" && ["backend-worker", "frontend-worker", "worker"].includes(role)) {
+      const pkg = readPackage(packageDir({ folder: record.folder, slug: record.slug, record }));
+      const paths = (ids: string[]) => ids.flatMap(id => pkg.workorders.find(wo => wo.id === id)?.writePaths ?? []);
+      for (const old of q.threadsByAird.all(record.id)) {
+        if (old.kind !== "agent" || !["backend-worker", "frontend-worker", "worker"].includes(old.role) || fallback.current(old.thread_id) !== old.thread_id) continue;
+        const oldExecution = execution.get.get(old.thread_id);
+        if (oldExecution?.successor) continue;
+        if (!scopesOverlap(paths(refs), paths(parseRefs(old.refs)))) continue;
+        if (oldExecution?.state === "transferring") {
+          // Recover a spawn acknowledged by the host but not persisted before a crash.
+          for (let offset = 0; offset < 1000; offset += 100) {
+            const candidates = await bb.sdk.threads.list({ projectId: record.project_id, parentThreadId, includeHidden: true, limit: 100, offset });
+            for (const candidate of candidates) {
+              const meta = await bb.sdk.threads.getPluginMetadata({ threadId: candidate.id });
+              if (meta.airdId !== record.id || !Array.isArray(meta.executionPredecessors) || !meta.executionPredecessors.includes(old.thread_id)) continue;
+              q.insertThread.run(withThreadDefaults({ ...old, thread_id: candidate.id, parent_thread_id: parentThreadId, title: candidate.title ?? old.title, created_at: candidate.createdAt, provider: candidate.providerId, task }));
+              execution.insert.run(candidate.id);
+              for (const predecessor of meta.executionPredecessors) if (typeof predecessor === "string") db.prepare(`UPDATE worker_execution SET state='transferred', successor=? WHERE thread_id=?`).run(candidate.id, predecessor);
+              publishChanged();
+              return { thread: candidate, title: candidate.title ?? old.title, model: old.model, effort: old.effort, provider: candidate.providerId, refs, stageNode: old.stage_node };
+            }
+            if (candidates.length < 100) break;
+          }
+          throw new Error(`Передача @thread:${old.thread_id} имеет неопределённый результат. Преемник ещё не найден; повторный запуск заблокирован, чтобы не создать второго писателя.`);
+        }
+        const live = await bb.sdk.threads.get({ threadId: old.thread_id });
+        if (RUNNING.has(live.status) || awaitingStart(old.thread_id) || fallback.isPending(old.thread_id)) throw new Error(`Область записи занята агентом @thread:${old.thread_id}. Дождись завершения; freshReason не снимает владение файлами.`);
+        if (old.budget_signal_at && parseRefs(old.refs).some(id => refs.includes(id))) {
+          const wo = parseRefs(old.refs).find(id => /^WO-/u.test(id)) ?? "WO";
+          const note = join(packageDir({ folder: record.folder, slug: record.slug, record }), "evidence", `${wo}-progress.md`);
+          if (!existsSync(note) || statSync(note).size > 32_000 || statSync(note).mtimeMs < old.budget_signal_at || readFileSync(note, "utf8").trim().length < 80) throw new Error(`Нужен свежий checkpoint ${note} от завершившегося агента @thread:${old.thread_id}.`);
+          if (!realpathSync(note).startsWith(realpathSync(packageDir({ folder: record.folder, slug: record.slug, record })) + "/")) throw new Error("Checkpoint вне пакета AIRD");
+          if (oldExecution) {
+            const invalid = checkpointProblem(splitFrontmatter(readFileSync(note, "utf8")).data, old.thread_id);
+            if (invalid) throw new Error(`Неполный checkpoint: ${invalid}`);
+            db.prepare(`UPDATE worker_execution SET state = 'checkpoint_ready', checkpoint = ? WHERE thread_id = ?`).run(createHash("sha256").update(readFileSync(note)).digest("hex"), old.thread_id);
+            predecessors.push(old.thread_id);
+          }
+          task += `\n\nПродолжение после @thread:${old.thread_id}: сначала прочитай ${note}; проверь состояние рабочей копии и сохрани незакоммиченные изменения.`;
+        }
+      }
+    }
+    // Catch redundant same-workorder spawns before paying for a new context. The
+    // orchestrator decides scope: a distinct subtask can explicitly start fresh.
+    if (!freshReason && refs.length && ["backend-worker", "frontend-worker", "worker", "debugger"].includes(role)) {
+      const matching = q.threadsByAird.all(record.id).filter((old) => {
+        if (old.kind !== "agent" || old.role !== role || old.budget_signal_at || fallback.current(old.thread_id) !== old.thread_id) return false;
+        if (old.provider !== wanted.provider || old.model !== runtime.model) return false;
+        let previous: string[];
+        try { previous = JSON.parse(old.refs ?? "[]"); } catch { return false; }
+        return previous.length === refs.length && refs.every((ref) => previous.includes(ref));
+      }).sort((a, b) => b.created_at - a.created_at).slice(0, 3);
+      for (const old of matching) {
+        if (awaitingStart(old.thread_id) || fallback.isPending(old.thread_id)) continue;
+        try {
+          const live = await bb.sdk.threads.get({ threadId: old.thread_id });
+          if (RUNNING.has(live.status)) continue;
+          const context = await contextOf(old.thread_id);
+          if (context.used === null || context.used >= CONTINUE_MAX_TOKENS || (context.pct ?? 0) >= CONTINUE_MAX_PCT) continue;
+        } catch { continue; }
+        throw new Error(`Для ${refs.join(", ")} уже есть свободный ${role}: @thread:${old.thread_id}. Если это продолжение той же задачи, вызови sf_continue_agent({ threadId: "${old.thread_id}", task }). Для отдельной подзадачи или чистого контекста повтори sf_spawn_agent с freshReason — конкретной причиной нового треда. Новый агент пока не создан.`);
+      }
+    }
     const pkgDirNow = packageDir({ folder: record.folder, slug: record.slug, record });
     await projectSecrets(record.project_id); // warm the cache configure() reads
     const pkgNow = readPackage(pkgDirNow);
+    const policyIssue = profileProblem(splitFrontmatter(readText(join(pkgDirNow, "STATE.md")) ?? "").data);
+    if (policyIssue) throw new Error(policyIssue);
     const inputs = listInputs(pkgDirNow);
     const attached = inputsNamedIn(task, inputs);
     const waveOfRef = refs.map((id) => pkgNow.workorders.find((wo) => wo.id === id)?.wave).find((wave) => wave && /^W\d+/u.test(wave));
@@ -1366,7 +1470,7 @@ export default async function plugin(bb: BbPluginApi) {
       orchestratorThreadId: parentThreadId,
       materials: inputLines(inputs, `${pkgDirNow}/`),
       attachedCount: Math.min(attached.length, inputParts(attached, null).length),
-      actionBudget: parentRow.stage === "delivery" && ["backend-worker", "frontend-worker", "worker"].includes(role) ? WORKER_ACTION_BUDGET : null,
+      actionBudget: parentRow.stage === "delivery" && ["backend-worker", "frontend-worker", "worker"].includes(role) ? EXECUTION_POLICY.stopActions : null,
       sections: parentRow.stage === "delivery" && ["backend-worker", "frontend-worker", "worker"].includes(role)
         ? sectionsMarkdown(briefSections(
             [...new Set(refs.flatMap((id) => pkgNow.workorders.find((wo) => wo.id === id)?.docsToRead ?? []))],
@@ -1398,8 +1502,10 @@ export default async function plugin(bb: BbPluginApi) {
         stage: parentRow.stage,
         slug: record.slug,
         skills: definition?.skills ?? [],
+        executionPredecessors: predecessors,
       },
     };
+    for (const id of predecessors) db.prepare(`UPDATE worker_execution SET state = 'transferring' WHERE thread_id = ?`).run(id);
     let thread;
     let used = runtime;
     try {
@@ -1409,7 +1515,7 @@ export default async function plugin(bb: BbPluginApi) {
         ...(runtime.effort ? { reasoningLevel: runtime.effort } : {}),
       });
     } catch (error) {
-      if (!runtime.model && !runtime.effort) throw error;
+      if (predecessors.length || (!runtime.model && !runtime.effort)) throw error;
       bb.log.warn(`spawn ${role} with ${runtime.model}/${runtime.effort} failed, retrying with defaults: ${String(error)}`);
       thread = await bb.sdk.threads.spawn(base);
       used = { model: null, effort: null };
@@ -1430,6 +1536,9 @@ export default async function plugin(bb: BbPluginApi) {
       stage_node: stageNode,
       task,
     }));
+    if (parentRow.stage === "delivery" && ["backend-worker", "frontend-worker", "worker"].includes(role)) execution.insert.run(thread.id);
+    for (const id of predecessors) db.prepare(`UPDATE worker_execution SET state = 'transferred', successor = ? WHERE thread_id = ?`).run(thread.id, id);
+    resumedAt.set(thread.id, Date.now());
     fallback.remember(q.threadById.get(thread.id)!, base.input ?? [{ type: "text", text: base.prompt!, mentions: [] }], reserveFor("agent", role));
     publishChanged();
     return { thread, title, model: used.model, effort: used.effort, provider: wanted.provider, refs, stageNode };
@@ -1466,6 +1575,7 @@ export default async function plugin(bb: BbPluginApi) {
   const fallback = modelFallback(bb, {
     thread: (id) => q.threadById.get(id),
     reserve: (row) => reserveFor(row.kind, row.kind === "orchestrator" ? row.stage ?? "delivery" : row.role),
+    canResume: (thread) => { if (q.threadById.get(thread.thread_id)?.budget_signal_at) throw new Error("Бюджет исполнителя исчерпан: требуется checkpoint и свежий исполнитель, а не повтор или смена модели."); },
     validate: async (reserve, thread) => {
       await validateReserve(reserve);
       if (reserve.provider === thread.provider && reserve.model === thread.model) throw new Error("Запасная модель совпадает с основной");
@@ -1482,6 +1592,11 @@ export default async function plugin(bb: BbPluginApi) {
       const row = q.threadById.get(source);
       if (!row) throw new Error("Исходный агент не найден");
       q.insertThread.run(withThreadDefaults({ ...row, thread_id: target, provider: runtime.provider, model: runtime.model, effort: runtime.effort, created_at: Date.now() }));
+      const previousExecution = execution.get.get(source);
+      if (previousExecution) {
+        execution.insert.run(target);
+        if (row.budget_signal_at) { q.markBudgetSignal.run(row.budget_signal_at, target); execution.checkpoint.run(target); }
+      }
     },
     starting: (id, newThread) => {
       if (newThread && (finished.has(id) || startedAt.has(id))) return;
@@ -1531,7 +1646,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.active", ({ thread }) => {
     startedAt.set(thread.id, Date.now());
-    usageCache.delete(thread.id);
+    collectUsage.invalidate(thread.id);
     // The user answered a chat-text question in the thread itself.
     for (const open of q.openTextQuestions.all(thread.id)) q.closeQuestion.run("answered", "ответ в треде", "thread", Date.now(), open.id);
     finished.delete(thread.id);
@@ -1539,7 +1654,7 @@ export default async function plugin(bb: BbPluginApi) {
   });
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
     finished.set(thread.id, { status: "idle", text: lastAssistantText ?? null, at: Date.now() });
-    usageCache.delete(thread.id);
+    collectUsage.invalidate(thread.id);
     try {
       captureTextQuestion(thread.id, lastAssistantText ?? null);
     } catch (error) {
@@ -1646,6 +1761,7 @@ export default async function plugin(bb: BbPluginApi) {
     if (!parentRow || parentRow.kind !== "orchestrator") throw new Error("sf_continue_agent доступен только оркестратору AIRD");
     const row = q.threadById.get(threadId);
     if (!row || row.kind !== "agent" || row.aird_id !== parentRow.aird_id) throw new Error(`${threadId} — не агент этого AIRD`);
+    if (row.budget_signal_at) throw new Error(`Агент ${threadId} исчерпал бюджет действий: запусти свежего через sf_spawn_agent с workorder и его evidence/*-progress.md`);
     const record = q.airdById.get(row.aird_id);
     if (!record) throw new Error("AIRD этого треда не найден");
     if (row.role !== "test-author" && row.role !== "reviewer" && record.acceptance_folder && task.includes(record.acceptance_folder)) {
@@ -1664,6 +1780,10 @@ export default async function plugin(bb: BbPluginApi) {
       if (session.slices >= SLICE_LIMIT) throw new Error(`В этой сессии уже ${session.slices} срезов (лимит ${SLICE_LIMIT}): запиши checkpoint и вызови sf_handoff`);
     }
     const context = await contextOf(threadId);
+    if (execution.get.get(threadId)) {
+      const decision = await workerBudget(threadId);
+      if (decision.action === "checkpoint") throw new Error("Бюджет исчерпан: сохрани checkpoint и заверши агента; продолжение в этом контексте запрещено.");
+    }
     if ((context.used ?? 0) >= CONTINUE_MAX_TOKENS || (context.pct ?? 0) >= CONTINUE_MAX_PCT) {
       throw new Error(`Контекст агента уже ${context.used ?? "?"} токенов (${context.pct ?? "?"}%): продолжать дороже, чем начать заново. Запусти свежего через sf_spawn_agent и дай ему пути к результатам этого агента.`);
     }
@@ -1713,7 +1833,7 @@ export default async function plugin(bb: BbPluginApi) {
       .slice(0, 3);
     const found: string[] = [];
     for (const thread of same) {
-      if (awaitingStart(thread.thread_id)) continue;
+      if (thread.budget_signal_at || fallback.current(thread.thread_id) !== thread.thread_id || awaitingStart(thread.thread_id) || fallback.isPending(thread.thread_id)) continue;
       try {
         const live = (await bb.sdk.threads.get({ threadId: thread.thread_id })) as unknown as {
           status: string;
@@ -1733,27 +1853,91 @@ export default async function plugin(bb: BbPluginApi) {
     return found;
   }
 
+  // ------------------------------------------------------------ activity
+  // A thread whose turn ended can still be working: a provider's background
+  // task (a long test run, a wait for other threads) runs on after the turn.
+  // Factory reads it from the thread's events, with the command in flight and
+  // the last thing the agent said, so the page shows that work goes on.
+  interface ThreadActivity {
+    background: Map<string, { description: string; startedAt: number }>;
+    commands: Map<string, { text: string; startedAt: number }>;
+    lastMessage: string | null;
+    lastMessageAt: number | null;
+    lastEventAt: number | null;
+    afterSeq: string | null;
+    checkedAt: number;
+  }
+  const activityCache = new Map<string, ThreadActivity>();
+  const shortCommand = (command: string) =>
+    command.split("\n").map((line) => line.trim()).find((line) => line && !line.startsWith("#"))?.replace(/^cd\s+\S+\s*(&&|;)\s*/u, "").slice(0, 120) ?? "";
+
+  async function activityOf(threadId: string, running: boolean): Promise<ThreadActivity | null> {
+    let state = activityCache.get(threadId);
+    const fresh = state && Date.now() - state.checkedAt < (running || (state.background.size > 0) ? 5_000 : 120_000);
+    if (state && fresh) return state;
+    state ??= { background: new Map(), commands: new Map(), lastMessage: null, lastMessageAt: null, lastEventAt: null, afterSeq: null, checkedAt: 0 };
+    try {
+      for (let page = 0; page < 200; page += 1) {
+        const rows = (await bb.sdk.threads.events.list({
+          threadId,
+          types: ["item/started", "item/completed", "item/backgroundTask/completed", "turn/completed"],
+          order: "asc",
+          limit: String(EVENT_PAGE),
+          ...(state.afterSeq ? { afterSeq: state.afterSeq } : {}),
+        })) as unknown as Array<{ seq: number | string; type: string; createdAt?: number | string; data?: { item?: { id?: string; type?: string; description?: string; taskStatus?: string; command?: string; text?: string } } }>;
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          const at = Number(row.createdAt ?? Date.now());
+          const item = row.data?.item;
+          state.lastEventAt = Math.max(state.lastEventAt ?? 0, at);
+          if (row.type === "turn/completed") { state.commands.clear(); continue; }
+          if (!item?.id) continue;
+          if (row.type === "item/started" && item.type === "backgroundTask" && item.taskStatus === "running") {
+            state.background.set(item.id, { description: item.description ?? "фоновая задача", startedAt: at });
+          } else if (row.type === "item/backgroundTask/completed") {
+            state.background.delete(item.id);
+          } else if (row.type === "item/started" && item.type === "commandExecution") {
+            state.commands.set(item.id, { text: shortCommand(item.command ?? ""), startedAt: at });
+          } else if (row.type === "item/completed" && item.type === "commandExecution") {
+            state.commands.delete(item.id);
+          } else if (row.type === "item/completed" && item.type === "agentMessage" && item.text?.trim()) {
+            state.lastMessage = item.text.trim();
+            state.lastMessageAt = at;
+          }
+        }
+        state.afterSeq = String(rows[rows.length - 1]!.seq);
+        if (rows.length < EVENT_PAGE) break;
+      }
+      state.checkedAt = Date.now();
+      activityCache.set(threadId, state);
+      return state;
+    } catch (error) {
+      bb.log.warn(`activity of ${threadId}: ${String(error).slice(0, 300)}`);
+      return state.checkedAt ? state : null;
+    }
+  }
+
+  /** Whether Factory should read a thread's events for the page: live work, or a recent orchestrator. */
+  function watchActivity(thread: ThreadRow, status: string): boolean {
+    if (RUNNING.has(status)) return true;
+    if (activityCache.get(thread.thread_id)?.background.size) return true;
+    const age = Date.now() - thread.created_at;
+    return thread.kind === "orchestrator" ? age < 72 * 3600_000 : age < 12 * 3600_000;
+  }
+
+  /** Cached only: a thread with a background task counts as working in the AIRD list too. */
+  function hasBackground(threadId: string): boolean {
+    return (activityCache.get(threadId)?.background.size ?? 0) > 0;
+  }
+
   // ------------------------------------------------------------ usage
   // Every step of an agent re-sends its whole context, so its cost grows with
   // the square of how long it runs. Factory shows each agent's tokens and tells
   // a delivery worker when its action budget is spent: it commits what is
   // green and writes what is left, and a fresh worker continues from that note.
-  const usageCache = new Map<string, { tokens: number | null; at: number }>();
-  async function tokensOf(threadId: string, running: boolean): Promise<number | null> {
-    const cached = usageCache.get(threadId);
-    if (cached && (!running || Date.now() - cached.at < 30_000)) return cached.tokens;
-    try {
-      const rows = (await bb.sdk.threads.events.list({ threadId, types: ["thread/tokenUsage/updated"], order: "desc", limit: "1" })) as unknown as Array<{
-        data?: { tokenUsage?: { total?: { totalTokens?: number } } };
-      }>;
-      const total = rows[0]?.data?.tokenUsage?.total?.totalTokens;
-      const tokens = typeof total === "number" ? total : null;
-      usageCache.set(threadId, { tokens, at: Date.now() });
-      return tokens;
-    } catch {
-      return cached?.tokens ?? null;
-    }
-  }
+  /** The bb host returns at most 100 thread events per request. */
+  const EVENT_PAGE = 100;
+  const collectUsage = usageCollector((args) => bb.sdk.threads.events.list(args));
 
   /** The latest limit state each provider reported in this AIRD's recent threads (allowed / warning / blocked). */
   const limitCache = new Map<string, { at: number; value: ProviderLimit | null }>();
@@ -1788,18 +1972,41 @@ export default async function plugin(bb: BbPluginApi) {
     return [...latest.values()].filter((limit) => limit.resetsAt === null || limit.resetsAt > Date.now() || limit.status === "allowed");
   }
 
-  function tokensByProvider(threads: ThreadRow[], tokens: Map<string, number | null>) {
-    const byProvider = new Map<string, number>();
-    let total = 0;
-    for (const thread of threads) {
-      const value = tokens.get(thread.thread_id) ?? 0;
-      total += value;
-      const provider = thread.provider ?? "—";
-      byProvider.set(provider, (byProvider.get(provider) ?? 0) + value);
-    }
+  function activityView(state: ThreadActivity | null, running: boolean) {
+    if (!state) return null;
+    const command = running ? [...state.commands.values()].sort((a, b) => b.startedAt - a.startedAt)[0] ?? null : null;
     return {
-      total,
-      byProvider: [...byProvider].filter(([, value]) => value > 0).map(([provider, value]) => ({ provider, tokens: value })).sort((a, b) => b.tokens - a.tokens),
+      background: [...state.background.values()].sort((a, b) => a.startedAt - b.startedAt),
+      command,
+      lastMessage: state.lastMessage ? state.lastMessage.slice(0, 600) : null,
+      lastMessageAt: state.lastMessageAt,
+      lastEventAt: state.lastEventAt,
+    };
+  }
+
+  /** What is going on right now across the AIRD's threads, newest orchestrator message included. */
+  function nowView(threads: AgentThread[]) {
+    const items: { threadId: string; role: string; title: string; kind: "running" | "background"; text: string; since: number | null }[] = [];
+    for (const thread of threads) {
+      const activity = thread.activity;
+      if (RUNNING.has(thread.status)) {
+        items.push({
+          threadId: thread.threadId, role: thread.role, title: thread.title, kind: "running",
+          text: activity?.command ? `выполняет: ${activity.command.text}` : "работает",
+          since: activity?.command?.startedAt ?? activity?.lastEventAt ?? null,
+        });
+      }
+      for (const task of activity?.background ?? []) {
+        items.push({ threadId: thread.threadId, role: thread.role, title: thread.title, kind: "background", text: task.description, since: task.startedAt });
+      }
+    }
+    const orchestrator = [...threads].filter((thread) => thread.kind === "orchestrator").sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+    return {
+      working: items.length > 0,
+      items,
+      orchestrator: orchestrator
+        ? { threadId: orchestrator.threadId, status: orchestrator.status, message: orchestrator.activity?.lastMessage ?? null, at: orchestrator.activity?.lastMessageAt ?? null, lastEventAt: orchestrator.activity?.lastEventAt ?? null }
+        : null,
     };
   }
 
@@ -1807,34 +2014,44 @@ export default async function plugin(bb: BbPluginApi) {
   const actionCounts = new Map<string, { afterSeq: string | null; count: number }>();
   async function actionsOf(threadId: string): Promise<number> {
     const state = actionCounts.get(threadId) ?? { afterSeq: null, count: 0 };
-    for (let page = 0; page < 20; page += 1) {
+    for (let page = 0; page < 200; page += 1) {
       const rows = (await bb.sdk.threads.events.list({
         threadId,
         types: ["item/completed"],
         order: "asc",
-        limit: "500",
+        limit: String(EVENT_PAGE),
         ...(state.afterSeq ? { afterSeq: state.afterSeq } : {}),
       })) as unknown as Array<{ seq: number | string; data?: { item?: { type?: string } } }>;
       if (rows.length === 0) break;
       for (const row of rows) if (ACTION_ITEMS.has(row.data?.item?.type ?? "")) state.count += 1;
       state.afterSeq = String(rows[rows.length - 1]!.seq);
-      if (rows.length < 500) break;
+      if (rows.length < EVENT_PAGE) break;
     }
     actionCounts.set(threadId, state);
     return state.count;
   }
 
-  function budgetSignal(row: ThreadRow, actions: number): string {
+  async function workerBudget(threadId: string) {
+    const live = await bb.sdk.threads.get({ threadId });
+    const usage = (live as any).contextWindowUsage;
+    const captured = usage?.snapshot?.capturedAt;
+    const capturedAt = typeof captured === "number" ? captured : typeof captured === "string" ? Date.parse(captured) : null;
+    return decideExecutionBudget({ actions: await actionsOf(threadId), contextTokens: usage?.usedTokens ?? null, contextWindow: usage?.modelContextWindow ?? null, capturedAt, now: Date.now() });
+  }
+
+  function budgetSignal(row: ThreadRow, actions: number, reason = ""): string {
     const wo = parseRefs(row.refs).find((id) => /^WO-/u.test(id)) ?? "WO";
     return [
       "## Software Factory: бюджет воркера исчерпан",
       "",
-      `Ты сделал ${actions} действий (бюджет ${WORKER_ACTION_BUDGET}). Каждый следующий шаг заново отправляет весь накопленный контекст, поэтому остаток дешевле сделает свежий воркер по короткой записке. Сейчас:`,
+      `Ты сделал ${actions} действий (бюджет ${execution.get.get(row.thread_id) ? EXECUTION_POLICY.stopActions : WORKER_ACTION_BUDGET}). Каждый следующий шаг заново отправляет весь накопленный контекст, поэтому остаток дешевле сделает свежий воркер по короткой записке. Сейчас:`,
       "",
+      ...(reason ? [`Причина checkpoint: ${reason}.`] : []),
       "1. Не начинай новых шагов: доведи текущую правку до компилируемого состояния.",
       "2. Прогони затронутые тесты (вывод — в файл, на экран только хвост).",
-      "3. Закоммить то, что проходит.",
+      "3. Сохрани рабочую копию; коммить только если это разрешено пользователем. Не откатывай незавершённые правки.",
       `4. Запиши в пакете \`evidence/${wo}-progress.md\`: коммит, что сделано, что осталось — шаги с точными файлами и функциями, какие тесты красные и почему. Дизайн не пересказывай: следующий воркер получит воркордер.`,
+      ...(execution.get.get(row.thread_id) ? [`В начале записки добавь YAML frontmatter: checkpoint_source: ${row.thread_id}; checkpoint_revision: текущая ревизия/ревизии; checkpoint_dirty_paths, checkpoint_completed, checkpoint_remaining, checkpoint_checks: YAML-списки. Пустые списки допустимы, но checks должен назвать выполненные команды или явно сказать, что проверки не запускались.`] : []),
       `5. Заверши ответ строкой \`Статус: частично — остаток в evidence/${wo}-progress.md\`.`,
     ].join("\n");
   }
@@ -1849,14 +2066,46 @@ export default async function plugin(bb: BbPluginApi) {
           const status = (await bb.sdk.threads.get({ threadId: row.thread_id })).status;
           if (!RUNNING.has(status)) continue;
           const actions = await actionsOf(row.thread_id);
-          if (actions < WORKER_ACTION_BUDGET) continue;
-          await bb.sdk.threads.send({ threadId: row.thread_id, input: [{ type: "text", text: budgetSignal(row, actions), mentions: [] }], mode: "steer-if-active" });
+          const managed = execution.get.get(row.thread_id);
+          let reason = "";
+          if (managed) {
+            const decision = await workerBudget(row.thread_id);
+            reason = decision.reasons.join(", ");
+            if (decision.action === "continue") continue;
+            if (decision.action === "warn") {
+              if (!managed.warned_at) {
+                await bb.sdk.threads.send({ threadId: row.thread_id, input: [{ type: "text", text: `Factory: бюджет близок (${decision.reasons.join(", ")}). Заверши текущую часть; подготовь краткую записку о результате и остатке.`, mentions: [] }], mode: "steer-if-active" });
+                execution.warn.run(Date.now(), row.thread_id);
+              }
+              continue;
+            }
+          } else if (actions < WORKER_ACTION_BUDGET) continue;
+          await bb.sdk.threads.send({ threadId: row.thread_id, input: [{ type: "text", text: budgetSignal(row, actions, reason), mentions: [] }], mode: "steer-if-active" });
           q.markBudgetSignal.run(Date.now(), row.thread_id);
+          execution.checkpoint.run(row.thread_id);
           bb.log.info(`budget signal sent to ${row.thread_id} after ${actions} actions`);
           publishChanged();
         } catch (error) {
           bb.log.warn(`budget check failed for ${row.thread_id}: ${String(error)}`);
         }
+      }
+      const requested = db.prepare(`SELECT t.* FROM threads t JOIN worker_execution e ON e.thread_id=t.thread_id WHERE e.state='checkpoint_requested'`).all() as ThreadRow[];
+      for (const row of requested) {
+        try {
+          const record = q.airdById.get(row.aird_id);
+          if (!record || !row.budget_signal_at || Date.now() - row.budget_signal_at < 120_000) continue;
+          const wo = parseRefs(row.refs).find(id => /^WO-/u.test(id)) ?? "WO";
+          const dir = packageDir({folder:record.folder,slug:record.slug,record});
+          const note = join(dir, "evidence", `${wo}-progress.md`);
+          if (!existsSync(note) || statSync(note).size > 32_000 || statSync(note).mtimeMs < row.budget_signal_at || !realpathSync(note).startsWith(realpathSync(dir) + "/")) continue;
+          if (checkpointProblem(splitFrontmatter(readFileSync(note,"utf8")).data,row.thread_id)) continue;
+          const live = await bb.sdk.threads.get({threadId:row.thread_id});
+          if (RUNNING.has(live.status)) await bb.sdk.threads.stop({threadId:row.thread_id});
+          const stopped = await bb.sdk.threads.get({threadId:row.thread_id});
+          if (RUNNING.has(stopped.status)) continue;
+          db.prepare(`UPDATE worker_execution SET state='checkpoint_ready', checkpoint=? WHERE thread_id=?`).run(createHash("sha256").update(readFileSync(note)).digest("hex"),row.thread_id);
+          publishChanged();
+        } catch (error) { bb.log.warn(`checkpoint confirmation failed for ${row.thread_id}: ${String(error)}`); }
       }
     } finally {
       budgetCheckRunning = false;
@@ -1877,6 +2126,8 @@ export default async function plugin(bb: BbPluginApi) {
     const state = pkg.state;
     const wave = state?.activeWave ?? null;
     const problems: string[] = [];
+    const policyIssue = profileProblem(splitFrontmatter(readText(statePathOf(row)) ?? "").data);
+    if (policyIssue) problems.push(policyIssue);
     if (to === "in_delivery") {
       if (!wave || wave === "none") problems.push("в STATE.md нет active_wave");
       if (state?.readiness.implementation !== "ready") problems.push(`ready_for_implementation: ${state?.readiness.implementation ?? "—"}, нужно ready`);
@@ -2089,7 +2340,7 @@ export default async function plugin(bb: BbPluginApi) {
   function scenarioScope(pkg: ParsedPackage) {
     const wave = pkg.state?.activeWave ?? null;
     const scope = selectScenarioScope(pkg.scenarios, pkg.workorders, wave);
-    return { ...scope, wave: wave!, hash: createHash("sha256").update(JSON.stringify(scope)).digest("hex") };
+    return { ...scope, wave: wave!, hash: createHash("sha256").update(JSON.stringify(scope)).update(verificationIdentity(pkg.dir, splitFrontmatter(readText(join(pkg.dir,"STATE.md")) ?? "").data)).digest("hex") };
   }
 
   async function prepareAcceptanceWave(id: string): Promise<AirdRow> {
@@ -2192,7 +2443,7 @@ export default async function plugin(bb: BbPluginApi) {
     return { runId, done: Promise.resolve(q.runById.get(runId)!) };
   }
 
-  async function startAcceptanceRun(id: string, kind: "baseline" | "wave"): Promise<{ runId: string; done: Promise<AcceptanceRunRow> }> {
+  async function startAcceptanceRun(id: string, kind: "baseline" | "wave", retryReason?: string): Promise<{ runId: string; done: Promise<AcceptanceRunRow> }> {
     const active = activeRuns.get(id);
     if (active) {
       if (active.kind !== kind) throw new Error("Дождись текущего прогона перед запуском другого вида проверки");
@@ -2215,6 +2466,9 @@ export default async function plugin(bb: BbPluginApi) {
       const priorBase = q.runsByAird.all(id).find((run) => run.kind === "baseline" && run.wave === scope.wave && run.scope_hash === scope.hash && run.status !== "running");
       if (kind === "wave" && priorBase?.status !== "passed") throw new Error("Сначала нужна успешная проверка Red-first этой волны (sf_run_acceptance({ baseline: true }))");
       const targetRevision = kind === "wave" ? await revisionOf(target, wave.base_ref) : wave.base_ref;
+      const recent = q.runsByAird.all(id).filter(run => run.kind === kind && run.wave === scope.wave && run.scope_hash === scope.hash && run.target_revision === targetRevision && run.status !== "running").slice(0,2);
+      if (!retryReason?.trim() && repeatedPreparationFailure(recent)) throw new Error("Два одинаковых сбоя подготовки: автоматический повтор остановлен. Исправь набор или передай retryReason с конкретным изменением окружения; продуктовый код по этому результату не меняй.");
+      if (retryReason) bb.log.info(`acceptance retry ${id}: ${retryReason.slice(0,500)}`);
       const runId = `run_${createHash("sha1").update(`${id}\0${Date.now()}`).digest("hex").slice(0, 12)}`;
       q.insertRun.run(runId, id, kind, Date.now(), scope.wave, scope.hash, targetRevision);
       publishChanged();
@@ -2277,6 +2531,7 @@ export default async function plugin(bb: BbPluginApi) {
       pkg,
       view: {
         folder: record?.acceptance_folder ?? null, branch: record?.acceptance_branch ?? null,
+        evidenceState: evidenceState(gate, runs.some(run => run.kind === "wave")),
         wave: scope?.wave ?? null, gate: gate as "untested" | "passed" | "failed" | "blocked",
         baselineVerdict: suiteError ?? lastBase?.verdict ?? null,
         hasSuite: Boolean(registered?.suite_dir),
@@ -2599,6 +2854,7 @@ export default async function plugin(bb: BbPluginApi) {
         .max(20)
         .optional()
         .describe("ID воркордеров/фиксов, над которыми работает агент (WO-03, F-0025). По ним Software Factory показывает, кто сейчас работает над задачей."),
+      freshReason: z.string().trim().min(1).max(500).optional().describe("Почему нужен новый тред, если уже есть небольшой свободный агент той же роли и воркордера: отдельная подзадача, независимая проверка или чистый контекст. Для продолжения той же работы используй sf_continue_agent."),
       model: z
         .string()
         .trim()
@@ -2606,10 +2862,10 @@ export default async function plugin(bb: BbPluginApi) {
         .optional()
         .describe("Модель для этого запуска, если скилл её называет: id модели провайдера или уровень (sonnet, opus, haiku). Выбор пользователя на странице ролей важнее; неизвестное значение игнорируется."),
     }),
-    async execute({ role, task, label, workorders, model: modelRequest }, { threadId }) {
+    async execute({ role, task, label, workorders, model: modelRequest, freshReason }, { threadId }) {
       if (!threadId) return { content: [{ type: "text", text: "Нет threadId вызывающего треда" }], isError: true };
       try {
-        const { thread, title, model, effort, provider } = await spawnAgent(threadId, role, task, label, workorders ?? [], modelRequest);
+        const { thread, title, model, effort, provider } = await spawnAgent(threadId, role, task, label, workorders ?? [], modelRequest, freshReason);
         const ignored = modelRequest && !(model ?? "").toLowerCase().includes(modelRequest.trim().toLowerCase())
           ? ` Запрошенная модель «${modelRequest}» не применена: её нет у провайдера или роль закреплена пользователем.`
           : "";
@@ -2698,14 +2954,15 @@ export default async function plugin(bb: BbPluginApi) {
     presentation: { label: { pending: "Гоняю приёмку", completed: "Приёмка прогнана" } },
     parameters: z.object({
       baseline: z.boolean().optional().describe("true — проверка «красного» на базе; по умолчанию прогон по рабочей worktree AIRD"),
+      retryReason: z.string().trim().min(10).max(500).optional().describe("После двух одинаковых ошибок подготовки: что конкретно исправлено в окружении. Не повторяй без новых данных."),
       waitSeconds: z.number().int().min(10).max(1500).optional().describe("Сколько ждать результата (по умолчанию 540); если не успело — вызови снова"),
     }),
-    async execute({ baseline, waitSeconds }, { threadId }) {
+    async execute({ baseline, waitSeconds, retryReason }, { threadId }) {
       const row = threadId ? q.threadById.get(threadId) : undefined;
       if (!row) return { content: [{ type: "text", text: "sf_run_acceptance доступен только в тредах AIRD" }], isError: true };
       try {
         const kind = baseline ? "baseline" : "wave";
-        const { runId, done } = await startAcceptanceRun(row.aird_id, kind);
+        const { runId, done } = await startAcceptanceRun(row.aird_id, kind, retryReason);
         let timer: ReturnType<typeof setTimeout> | undefined;
         const finished = await Promise.race([done, new Promise<null>((resolveWait) => {
           timer = setTimeout(() => resolveWait(null), (waitSeconds ?? 540) * 1000);
@@ -2841,7 +3098,8 @@ export default async function plugin(bb: BbPluginApi) {
           "- task — полный бриф: агент начинает с чистого контекста и видит только его и файлы.",
           "- model — только если скилл называет модель для этого запуска (`model: sonnet` для механической работы): передай её как есть; иначе не указывай — работает модель роли.",
           "- Независимых агентов запускай пачкой, затем жди всех одним `sf_wait_agents`. Если вернулось «ещё работает» — вызови снова.",
-          "- Следующий шаг прямо продолжает работу уже запущенного агента (та же проба или область, его временный код и выводы нужны дальше) — `sf_continue_agent({ threadId, task })` вместо нового агента: в task — что изменилось и что сделать. Свежий агент через `sf_spawn_agent` — для другой задачи или когда Factory откажет из-за большого контекста агента (от 300 тыс. токенов или 60%).",
+          "- До нового запуска проверь, есть ли небольшой агент для продолжения той же конкретной задачи: `sf_continue_agent({ threadId, task })`, в task — изменения и следующий результат. Совпадения роли недостаточно. Свежий `sf_spawn_agent` — для другой подзадачи, исчерпанного бюджета или большого контекста (от 300 тыс. токенов или 60%). При совпадении воркордера Factory предложит продолжение до создания треда; для отдельной подзадачи укажи freshReason.",
+          "- Реализацию целого связного среза можно делегировать подходящей более дешёвой настроенной модели даже без параллелизма. В брифе — конкретная подзадача, область записи, условие завершения и проверки. Большой воркордер выполняй частями с проверяемым результатом внутри него; после сигнала бюджета свежий воркер получает workorder и evidence/<WO>-progress.md. Оркестратор держит решения, интеграцию и независимые проверки. Не создавай агентов на каждую мелкую правку.",
           "- Пользователь разрешил запуск этих тредов, запуская AIRD из Software Factory: не спрашивай разрешения на каждый.",
           "- Встроенный Agent/Task tool не используй. Его агента Factory не видит: не выбирает ему провайдера и модель (test-author должен уйти на другого провайдера), не учитывает его токены и не показывает его пользователю. Если sf_spawn_agent вернул ошибку — устрани причину или спроси пользователя через sf_ask_user.",
           "",

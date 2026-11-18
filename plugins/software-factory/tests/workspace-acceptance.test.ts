@@ -109,6 +109,6 @@ test('a workspace of several repositories gets blind acceptance; workers get the
     const brief = JSON.stringify(harness.inspection.sdk.callsTo('threads.spawn').at(-1));
     assert.match(brief, /Разделы пакета из docs_to_read/); assert.match(brief, /GET \/status returns the state/);
     assert.doesNotMatch(brief, /UNRELATED CONTRACT TEXT/);
-    assert.match(brief, /около 100 действий/);
+    assert.match(brief, /около 80 действий/);
   } finally { await harness.lifecycle.dispose(); rmSync(dir, { recursive: true, force: true }); }
 });

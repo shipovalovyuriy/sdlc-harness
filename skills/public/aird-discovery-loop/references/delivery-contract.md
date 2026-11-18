@@ -495,3 +495,15 @@ retried, but a disagreement or desire for extra confidence does not reset the
 budget. A later wave that changes contracts gets one final combined review when
 that wave reaches its own end-of-discovery boundary; unchanged accepted hashes
 are never reviewed again.
+
+## Efficiency policy 2
+
+New packages opt in with `efficiency_policy: 2`; old accepted packages keep their original contract. State records `risk_flags` as an explicit list and `profile_reason` explaining the profile. Flags: `security`, `migration`, `schema`, `multi_service`, `external_unknown`, `public_contract`, `cross_layer`. Security, migration, schema, multi-service contracts and unknown external behavior require deep. Public-contract or cross-layer changes require at least standard. Unknown flags block readiness rather than being ignored.
+
+Lite: reversible localized change, known behavior, no flagged risk, one primary implementation owner. Keep required filenames but only meaningful scoped content. No separate explorer/architect/risk analyst or new prototype without a concrete unresolved question. Existing UI changes reference the existing screen, record `prototype_not_applicable` in the workorder when appropriate, and verify affected states. Standard: bounded feature with known dependencies; add roles only for a decision or independent verification. Deep: explicit boundary/rollback analysis and risk-specific gates. All profiles preserve required runtime, browser, security, independent acceptance and final verification selected by their actual scope.
+
+A newly discovered risk raises the profile and records the reason without regenerating unchanged documents. Workorders describe one observable outcome, named reading sections, write scope, exact verification and completion evidence. Budgets injected by Factory take precedence over standalone defaults. Substantive implementation and product fixes belong to a scoped worker; coordinators manage decisions, integration and evidence.
+
+Checkpoint preserves revisions, dirty files, completed work, remaining steps, executed checks and blockers. Successors cannot write before the old owner stops. A checkpoint is not acceptance, and a missing measurement is not zero. Never commit solely because the process template says so; honor the user's authorization.
+
+For policy-2 acceptance, declare `verification_inputs` (workspace-relative configuration/dependency files, at most 32, each at most 1 MB) and `verification_environment` (nonempty runtime/environment revision). List ignored config files and external dependency identities that affect results; an empty list is an explicit assertion that no additional local inputs are needed. Factory fingerprints these files, the quality-gate commands, scenario scope, suite commit and current target revision. Missing/unreadable inputs block acceptance; changed inputs make prior evidence stale. No secrets are printed: only a digest enters the evidence identity. Time-varying external checks still require a fresh run; the fingerprint does not prove remote state is unchanged.

@@ -63,6 +63,7 @@ export function failureKind(event: PluginTurnFailedEvent): "limit" | "transient"
 export function modelFallback(bb: BbPluginApi, options: {
   thread: (id: string) => RecoveryThread | undefined;
   reserve: (thread: RecoveryThread) => ReserveModel | null;
+  canResume?: (thread: RecoveryThread) => void;
   validate: (reserve: ReserveModel, thread: RecoveryThread) => Promise<void>;
   transferred: (source: string, target: string, runtime: ReserveModel) => void;
   changed: () => void;
@@ -190,6 +191,7 @@ export function modelFallback(bb: BbPluginApi, options: {
           const event = JSON.parse(job.event) as PluginTurnFailedEvent;
           const reserve = reserveModelSchema.parse(JSON.parse(task.reserve!));
           const runtime = job.action === "switch" ? reserve : { provider: row.provider!, model: row.model, effort: row.effort };
+          options.canResume?.(row);
           if (job.action === "switch") await options.validate(reserve, row);
           // Remove only automatic retries, leaving user-authored queued work intact.
           const queue = await bb.sdk.threads.queuedMessages.list({ threadId: job.thread_id });
